@@ -107,7 +107,7 @@ export const useCreateQuizSession = () => {
 // ── Quiz generation constants ─────────────────────────────────────────────────
 // Maximum questions per parallel agent. Keeping this at 25 ensures each agent
 // stays well within token output limits even for complex question types.
-const QUIZ_BATCH_SIZE = 10;
+const QUIZ_BATCH_SIZE = 25;
 
 // Documents shorter than this are sent in full to every batch agent.
 // Longer documents are chunked proportionally — one chunk per agent.
