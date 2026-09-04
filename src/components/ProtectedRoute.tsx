@@ -11,7 +11,7 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isSessionVerified } = useAuth();
   const { data: profile, isLoading: profileLoading } = useProfile(user?.id);
   const location = useLocation();
   const { toast } = useToast();
@@ -32,6 +32,11 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   // Not authenticated - redirect to auth
   if (!user) {
     return <Navigate to="/auth" replace />;
+  }
+
+  // Authenticated but session not verified via OTP — send back to auth/verify gate
+  if (!isSessionVerified) {
+    return <Navigate to="/auth" state={{ pendingVerification: true, from: location.pathname }} replace />;
   }
 
   // Show loading while checking profile

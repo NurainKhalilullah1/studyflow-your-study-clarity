@@ -9,11 +9,16 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  isSessionVerified: boolean;
   signUp: (email: string, password: string) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signInWithGoogle: () => Promise<{ error: Error | null }>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
+  sendVerificationCode: (email: string, purpose?: string, name?: string) => Promise<{ ok: boolean; error?: string; cooldown?: boolean; message?: string }>;
+  verifyCode: (email: string, code: string) => Promise<{ ok: boolean; error?: string }>;
+  markSessionVerified: (userId?: string) => void;
+  clearSessionVerified: (userId?: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -22,6 +27,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isSessionVerified, setIsSessionVerified] = useState(false);
+
+  const checkIsVerified = (userId?: string | null) => {
+    if (!userId) return false;
+    return Boolean(localStorage.getItem(`studyflow_session_verified_${userId}`));
+  };
 
   useEffect(() => {
     let initialValidationDone = false;
@@ -44,6 +55,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (!hasHashToken && (session || user)) {
           setSession(null);
           setUser(null);
+          setIsSessionVerified(false);
           await supabase.auth.signOut({ scope: "local" });
         }
       } else {
@@ -51,6 +63,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const { data: { session } } = await supabase.auth.getSession();
         setSession(session);
         setUser(session?.user ?? null);
+        setIsSessionVerified(checkIsVerified(session?.user?.id));
       }
       initialValidationDone = true;
       setLoading(false);
@@ -64,13 +77,71 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           return;
         }
         setSession(session);
-        setUser(session?.user ?? null);
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+        setIsSessionVerified(checkIsVerified(currentUser?.id));
         setLoading(false);
       }
     );
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const markSessionVerified = (targetUserId?: string) => {
+    const id = targetUserId || user?.id;
+    if (id) {
+      localStorage.setItem(`studyflow_session_verified_${id}`, Date.now().toString());
+    }
+    setIsSessionVerified(true);
+  };
+
+  const clearSessionVerified = (targetUserId?: string) => {
+    const id = targetUserId || user?.id;
+    if (id) {
+      localStorage.removeItem(`studyflow_session_verified_${id}`);
+    }
+    setIsSessionVerified(false);
+  };
+
+  const sendVerificationCode = async (email: string, purpose = "signin", name?: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke("auth-verification", {
+        body: { action: "send", email, purpose, name },
+      });
+
+      if (error) {
+        return { ok: false, error: error.message || "Failed to send verification code." };
+      }
+      if (data?.error) {
+        return { ok: false, error: data.error, cooldown: data.cooldown };
+      }
+      return { ok: true, message: data?.message };
+    } catch (err: any) {
+      return { ok: false, error: err.message || "Network error while requesting verification code." };
+    }
+  };
+
+  const verifyCode = async (email: string, code: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke("auth-verification", {
+        body: { action: "verify", email, code },
+      });
+
+      if (error) {
+        return { ok: false, error: error.message || "Verification request failed." };
+      }
+      if (data?.error) {
+        return { ok: false, error: data.error };
+      }
+      if (data?.verified) {
+        markSessionVerified();
+        return { ok: true };
+      }
+      return { ok: false, error: "Verification was not confirmed." };
+    } catch (err: any) {
+      return { ok: false, error: err.message || "Network error while verifying code." };
+    }
+  };
 
   const signUp = async (email: string, password: string) => {
     const { error } = await supabase.auth.signUp({
@@ -119,7 +190,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/dashboard`,
+          redirectTo: `${window.location.origin}/auth?google_callback=true`,
         },
       });
 
@@ -140,11 +211,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signOut = async () => {
+    clearSessionVerified();
     await supabase.auth.signOut();
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signUp, signIn, signInWithGoogle, resetPassword, signOut }}>
+    <AuthContext.Provider value={{
+      user,
+      session,
+      loading,
+      isSessionVerified,
+      signUp,
+      signIn,
+      signInWithGoogle,
+      resetPassword,
+      signOut,
+      sendVerificationCode,
+      verifyCode,
+      markSessionVerified,
+      clearSessionVerified,
+    }}>
       {children}
     </AuthContext.Provider>
   );

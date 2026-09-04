@@ -1,18 +1,25 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mail, Lock, ArrowRight, Eye, EyeOff, ArrowLeft } from "lucide-react";
+import { Mail, Lock, ArrowRight, Eye, EyeOff, ArrowLeft, ShieldCheck, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+  InputOTPSeparator,
+} from "@/components/ui/input-otp";
 import { useToast } from "@/hooks/use-toast";
-import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { z } from "zod";
 import PasswordStrengthIndicator from "@/components/PasswordStrengthIndicator";
 import { StudyFlowLogo } from "@/components/StudyFlowLogo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
-// Zod validation schemas
+// ── Zod validation schemas ──────────────────────────────────────────────────
 const emailSchema = z
   .string()
   .trim()
@@ -41,6 +48,8 @@ const resetPasswordSchema = z.object({
   email: emailSchema,
 });
 
+const RESEND_COOLDOWN = 60; // seconds
+
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -50,25 +59,135 @@ const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // ── OTP state ───────────────────────────────────────────────────────────────
+  const [showVerification, setShowVerification] = useState(false);
+  const [verificationEmail, setVerificationEmail] = useState("");
+  const [verificationPurpose, setVerificationPurpose] = useState<"signin" | "signup" | "google_signin">("signin");
+  const [otpValue, setOtpValue] = useState("");
+  const [otpError, setOtpError] = useState("");
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isSendingCode, setIsSendingCode] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
+  const [resendCountdown, setResendCountdown] = useState(0);
+
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { signIn, signUp, signInWithGoogle, resetPassword, user, loading } = useAuth();
+  const location = useLocation();
+  const { signIn, signUp, signInWithGoogle, resetPassword, user, loading, isSessionVerified, sendVerificationCode, verifyCode } = useAuth();
 
-  // Redirect if already logged in (only after validation completes)
+  // ── Redirect if fully verified ──────────────────────────────────────────────
   useEffect(() => {
-    if (!loading && user) {
-      navigate("/dashboard", { replace: true });
+    if (!loading && user && isSessionVerified) {
+      const from = (location.state as any)?.from || "/dashboard";
+      navigate(from, { replace: true });
     }
-  }, [user, loading, navigate]);
+  }, [user, loading, isSessionVerified, navigate, location.state]);
+
+  // ── Google OAuth callback: user arrived, trigger OTP ─────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const isGoogleCallback = params.get("google_callback") === "true";
+
+    if (isGoogleCallback && user && !isSessionVerified && !showVerification) {
+      const userEmail = user.email || "";
+      const userName = user.user_metadata?.full_name || user.user_metadata?.name || "";
+      triggerVerification(userEmail, "google_signin", userName);
+      // Clean up the URL
+      window.history.replaceState({}, "", "/auth");
+    }
+  }, [user, isSessionVerified, showVerification]);
+
+  // ── Handle pendingVerification from ProtectedRoute ────────────────────────
+  useEffect(() => {
+    const state = location.state as any;
+    if (state?.pendingVerification && user && !isSessionVerified && !showVerification) {
+      const userEmail = user.email || "";
+      const userName = user.user_metadata?.full_name || user.user_metadata?.name || "";
+      triggerVerification(userEmail, "signin", userName);
+    }
+  }, [location.state, user, isSessionVerified, showVerification]);
+
+  // ── Resend countdown timer ────────────────────────────────────────────────
+  useEffect(() => {
+    if (resendCountdown <= 0) return;
+    const timer = setTimeout(() => setResendCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendCountdown]);
 
   const clearErrors = () => setErrors({});
 
+  // ── Trigger OTP dispatch & switch to verification screen ─────────────────
+  const triggerVerification = useCallback(async (
+    targetEmail: string,
+    purpose: "signin" | "signup" | "google_signin",
+    name?: string
+  ) => {
+    setVerificationEmail(targetEmail);
+    setVerificationPurpose(purpose);
+    setOtpValue("");
+    setOtpError("");
+    setIsSendingCode(true);
+    setShowVerification(true);
+
+    const result = await sendVerificationCode(targetEmail, purpose, name);
+
+    setIsSendingCode(false);
+
+    if (!result.ok && !result.cooldown) {
+      toast({
+        title: "Couldn't send verification code",
+        description: result.error || "Please try again.",
+        variant: "destructive",
+      });
+    } else {
+      setCodeSent(true);
+      setResendCountdown(RESEND_COOLDOWN);
+      if (!result.cooldown) {
+        toast({
+          title: "Verification code sent!",
+          description: `Check your email: ${targetEmail}`,
+        });
+      }
+    }
+  }, [sendVerificationCode, toast]);
+
+  // ── Handle resend ─────────────────────────────────────────────────────────
+  const handleResend = async () => {
+    if (resendCountdown > 0) return;
+    setOtpValue("");
+    setOtpError("");
+    await triggerVerification(verificationEmail, verificationPurpose);
+  };
+
+  // ── Handle OTP submission ─────────────────────────────────────────────────
+  const handleOtpComplete = async (value: string) => {
+    if (value.length !== 6) return;
+    setIsVerifying(true);
+    setOtpError("");
+
+    const result = await verifyCode(verificationEmail, value);
+    setIsVerifying(false);
+
+    if (result.ok) {
+      toast({
+        title: "✓ Verified!",
+        description: "Welcome to StudyFlow.",
+      });
+      const from = (location.state as any)?.from || "/dashboard";
+      navigate(from, { replace: true });
+    } else {
+      setOtpError(result.error || "Incorrect code. Please try again.");
+      setOtpValue("");
+    }
+  };
+
+  // ── Main form submit (email/password) ─────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     clearErrors();
 
-    // Validate with Zod
     const schema = isLogin ? signInSchema : signUpSchema;
     const result = schema.safeParse({ email, password, confirmPassword });
 
@@ -93,13 +212,11 @@ const Auth = () => {
           description: error.message,
           variant: "destructive",
         });
-      } else {
-        toast({
-          title: "Welcome back!",
-          description: "Redirecting to your dashboard...",
-        });
-        navigate("/dashboard");
+        setIsLoading(false);
+        return;
       }
+      // Successful sign-in — send OTP
+      await triggerVerification(email, "signin");
     } else {
       const { error } = await signUp(email, password);
       if (error) {
@@ -108,23 +225,23 @@ const Auth = () => {
           description: error.message,
           variant: "destructive",
         });
-      } else {
-        toast({
-          title: "Account created!",
-          description: "Please check your email to verify your account.",
-        });
-        // Fire welcome email — async, don't block UI
-        import("@/integrations/supabase/client").then(({ supabase }) => {
-          supabase.auth.getUser().then(({ data: { user } }) => {
-            if (user?.id) {
-              supabase.functions.invoke("send-email", {
-                body: { type: "welcome", userId: user.id },
-              }).catch(() => {/* silently ignore if Resend not yet configured */});
-            }
-          });
-        });
+        setIsLoading(false);
+        return;
       }
+
+      // Fire async welcome email (fire-and-forget)
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (user?.id) {
+          supabase.functions.invoke("send-email", {
+            body: { type: "welcome", userId: user.id },
+          }).catch(() => {/* silently ignore */});
+        }
+      });
+
+      // Send OTP for sign-up verification
+      await triggerVerification(email, "signup");
     }
+
     setIsLoading(false);
   };
 
@@ -175,13 +292,233 @@ const Auth = () => {
         variant: "destructive",
       });
     }
+    // On web: redirect happens; on native: onAuthStateChange fires →
+    // google_callback check or pendingVerification will pick it up
   };
 
-  // Forgot Password View
+  const purposeLabel = {
+    signin: "sign in",
+    signup: "create your account",
+    google_signin: "complete your Google sign-in",
+  }[verificationPurpose];
+
+  // ── Right-side decorative panel (shared) ──────────────────────────────────
+  const RightPanel = () => (
+    <div className="hidden lg:flex w-1/2 relative overflow-hidden gradient-primary">
+      <div className="absolute inset-0">
+        <div className="absolute top-20 left-20 w-64 h-64 bg-white/5 rounded-full blur-3xl" />
+        <div className="absolute bottom-20 right-20 w-80 h-80 bg-white/5 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-white/10 rounded-full blur-3xl" />
+      </div>
+      <div className="absolute inset-0 opacity-10">
+        <div className="absolute inset-0" style={{
+          backgroundImage: `radial-gradient(circle at 1px 1px, white 1px, transparent 0)`,
+          backgroundSize: '40px 40px'
+        }} />
+      </div>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.2 }}
+        className="relative z-10 flex flex-col items-center justify-center w-full p-12 text-center"
+      >
+        <StudyFlowLogo size="xl" variant="white" className="mb-8 opacity-80" />
+        <blockquote className="text-3xl lg:text-4xl font-bold text-primary-foreground leading-relaxed max-w-lg">
+          "Focus on what matters. Let AI handle the rest."
+        </blockquote>
+        <p className="mt-6 text-primary-foreground/70 text-lg">— The StudyFlow Way</p>
+        <div className="grid grid-cols-3 gap-8 mt-16">
+          <div className="text-center">
+            <p className="text-3xl font-bold text-primary-foreground">10K+</p>
+            <p className="text-sm text-primary-foreground/60">Students</p>
+          </div>
+          <div className="text-center">
+            <p className="text-3xl font-bold text-primary-foreground">50K+</p>
+            <p className="text-sm text-primary-foreground/60">PDFs Analyzed</p>
+          </div>
+          <div className="text-center">
+            <p className="text-3xl font-bold text-primary-foreground">98%</p>
+            <p className="text-sm text-primary-foreground/60">Satisfaction</p>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // VIEW: VERIFICATION CODE SCREEN
+  // ══════════════════════════════════════════════════════════════════════════
+  if (showVerification) {
+    return (
+      <div className="min-h-screen flex relative">
+        <div className="absolute top-4 right-4 z-10 lg:hidden">
+          <ThemeToggle />
+        </div>
+
+        {/* Left Side */}
+        <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-background">
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.5 }}
+            className="w-full max-w-md"
+          >
+            {/* Logo */}
+            <a href="/" className="flex items-center gap-2 mb-8 group">
+              <StudyFlowLogo size="lg" variant="purple" className="transition-transform group-hover:scale-110" />
+              <span className="text-xl font-bold text-foreground">StudyFlow</span>
+            </a>
+
+            {/* Back button — only for email/password flows, not Google callbacks */}
+            {verificationPurpose !== "google_signin" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowVerification(false);
+                  setOtpValue("");
+                  setOtpError("");
+                }}
+                className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back
+              </button>
+            )}
+
+            {/* Header */}
+            <div className="mb-8">
+              <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 mb-6">
+                <ShieldCheck className="w-8 h-8 text-primary" />
+              </div>
+              <h1 className="text-3xl font-bold text-foreground mb-2">
+                Check your email
+              </h1>
+              <p className="text-muted-foreground">
+                We sent a 6-digit verification code to{" "}
+                {isSendingCode ? (
+                  <span className="text-foreground font-medium">sending...</span>
+                ) : (
+                  <span className="text-foreground font-medium">{verificationEmail}</span>
+                )}{" "}
+                to {purposeLabel}.
+              </p>
+              <p className="text-muted-foreground text-sm mt-2">
+                The code expires in 10 minutes.
+              </p>
+            </div>
+
+            {/* OTP Input */}
+            <div className="space-y-6">
+              <div className="flex flex-col items-center gap-4">
+                <InputOTP
+                  maxLength={6}
+                  value={otpValue}
+                  onChange={(val) => {
+                    setOtpValue(val);
+                    setOtpError("");
+                    if (val.length === 6) {
+                      handleOtpComplete(val);
+                    }
+                  }}
+                  disabled={isVerifying || isSendingCode}
+                  id="otp-input"
+                >
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} className="h-14 w-14 text-xl border-border" />
+                    <InputOTPSlot index={1} className="h-14 w-14 text-xl border-border" />
+                    <InputOTPSlot index={2} className="h-14 w-14 text-xl border-border" />
+                  </InputOTPGroup>
+                  <InputOTPSeparator />
+                  <InputOTPGroup>
+                    <InputOTPSlot index={3} className="h-14 w-14 text-xl border-border" />
+                    <InputOTPSlot index={4} className="h-14 w-14 text-xl border-border" />
+                    <InputOTPSlot index={5} className="h-14 w-14 text-xl border-border" />
+                  </InputOTPGroup>
+                </InputOTP>
+
+                <AnimatePresence>
+                  {otpError && (
+                    <motion.p
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      className="text-sm text-destructive text-center"
+                    >
+                      {otpError}
+                    </motion.p>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Verify Button */}
+              <Button
+                variant="hero"
+                size="lg"
+                className="w-full group"
+                onClick={() => handleOtpComplete(otpValue)}
+                disabled={otpValue.length !== 6 || isVerifying || isSendingCode}
+                id="verify-btn"
+              >
+                {isVerifying ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                    Verifying...
+                  </span>
+                ) : isSendingCode ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                    Sending code...
+                  </span>
+                ) : (
+                  <>
+                    Verify & Continue
+                    <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
+                  </>
+                )}
+              </Button>
+
+              {/* Resend */}
+              <div className="text-center">
+                <p className="text-sm text-muted-foreground">
+                  Didn't receive the code?{" "}
+                  <button
+                    type="button"
+                    onClick={handleResend}
+                    disabled={resendCountdown > 0 || isSendingCode || isVerifying}
+                    className={`font-medium inline-flex items-center gap-1 transition-colors ${
+                      resendCountdown > 0 || isSendingCode
+                        ? "text-muted-foreground cursor-not-allowed"
+                        : "text-primary hover:text-primary/80"
+                    }`}
+                    id="resend-btn"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isSendingCode ? "animate-spin" : ""}`} />
+                    {resendCountdown > 0
+                      ? `Resend in ${resendCountdown}s`
+                      : "Resend code"}
+                  </button>
+                </p>
+              </div>
+
+              {/* Security note */}
+              <p className="text-xs text-muted-foreground/60 text-center">
+                🔒 This code was sent by StudyFlow to confirm your identity. Never share it with anyone.
+              </p>
+            </div>
+          </motion.div>
+        </div>
+
+        <RightPanel />
+      </div>
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // VIEW: FORGOT PASSWORD
+  // ══════════════════════════════════════════════════════════════════════════
   if (showForgotPassword) {
     return (
       <div className="min-h-screen flex items-center justify-center p-8 bg-background relative">
-        {/* Theme Toggle */}
         <div className="absolute top-4 right-4">
           <ThemeToggle />
         </div>
@@ -192,7 +529,6 @@ const Auth = () => {
           transition={{ duration: 0.5 }}
           className="w-full max-w-md"
         >
-          {/* Back Button */}
           <button
             type="button"
             onClick={() => {
@@ -205,7 +541,6 @@ const Auth = () => {
             Back to sign in
           </button>
 
-          {/* Header */}
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-foreground mb-2">
               Reset your password
@@ -215,7 +550,6 @@ const Auth = () => {
             </p>
           </div>
 
-          {/* Form */}
           <form onSubmit={handleForgotPassword} className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="reset-email" className="text-foreground">Email</Label>
@@ -250,7 +584,7 @@ const Auth = () => {
               {isLoading ? (
                 <span className="flex items-center gap-2">
                   <span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                  Sending reset link...
+                  Sending link...
                 </span>
               ) : (
                 <>
@@ -265,6 +599,9 @@ const Auth = () => {
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // VIEW: MAIN SIGN IN / SIGN UP
+  // ══════════════════════════════════════════════════════════════════════════
   return (
     <div className="min-h-screen flex relative">
       {/* Theme Toggle - visible on mobile, hidden on lg (right side has its own) */}
@@ -415,6 +752,7 @@ const Auth = () => {
               size="lg"
               className="w-full group"
               disabled={isLoading}
+              id="auth-submit-btn"
             >
               {isLoading ? (
                 <span className="flex items-center gap-2">
@@ -446,6 +784,7 @@ const Auth = () => {
               size="lg"
               className="w-full h-12"
               onClick={handleGoogleSignIn}
+              id="google-signin-btn"
             >
               <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
                 <path
@@ -469,7 +808,7 @@ const Auth = () => {
             </Button>
           </form>
 
-          {/* Toggle */}
+          {/* Toggle Sign In / Sign Up */}
           <div className="mt-8 text-center">
             <p className="text-muted-foreground">
               {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}

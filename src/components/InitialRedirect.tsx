@@ -6,18 +6,18 @@ import Index from "@/pages/Index";
 
 const InitialRedirect = () => {
   const navigate = useNavigate();
-  const { user, loading } = useAuth();
+  const { user, loading, isSessionVerified } = useAuth();
   const isNative = Capacitor.isNativePlatform();
 
   useEffect(() => {
     if (!loading && isNative) {
-      if (user) {
+      if (user && isSessionVerified) {
         navigate("/dashboard", { replace: true });
       } else {
         navigate("/auth", { replace: true });
       }
     }
-  }, [loading, isNative, user, navigate]);
+  }, [loading, isNative, user, isSessionVerified, navigate]);
 
   // For web, show the landing page (Index)
   // For mobile, show nothing (or a loader) until the redirect triggers
