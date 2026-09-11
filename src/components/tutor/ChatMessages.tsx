@@ -1,10 +1,11 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-import { User, FileText, Copy, Check, Download, Sparkles, ImageOff, RefreshCw } from "lucide-react";
+import { User, FileText, Copy, Check, Download, Sparkles, ImageOff, RefreshCw, Volume2, VolumeX } from "lucide-react";
 import ReactMarkdown from 'react-markdown';
 import { StudyFlowLogo } from "@/components/StudyFlowLogo";
 import { ImagePreview } from "./ImagePreview";
 import { useState, useEffect, useRef } from "react";
+import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 
 interface Message {
   role: 'user' | 'assistant';
@@ -143,6 +144,7 @@ const GeneratedImage = ({ url }: { url: string }) => {
 
 export const ChatMessages = ({ messages, isLoading, streamingIndex }: ChatMessagesProps) => {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const tts = useSpeechSynthesis();
   /**
    * Tracks which messages have finished their typewriter animation.
    * Key = `${idx}:${content.length}` so that re-loaded history (same
@@ -259,9 +261,63 @@ export const ChatMessages = ({ messages, isLoading, streamingIndex }: ChatMessag
                       </div>
                     )}
 
-                    {/* Copy / Export — only once content is present and animation done (or never animated) */}
+                    {/* Copy / Export / TTS — only once content is present and animation done (or never animated) */}
                     {msg.content && !shouldAnimate && (
-                      <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/50">
+                      <div className="flex items-center gap-3 mt-2 pt-2 border-t border-border/50">
+                        {/* Audio Read-Aloud Button */}
+                        {tts.isSupported && (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => {
+                                if (tts.isSpeaking && tts.activeMessageId === String(idx)) {
+                                  tts.stop();
+                                } else {
+                                  tts.speak(msg.content, String(idx));
+                                }
+                              }}
+                              className={cn(
+                                "flex items-center gap-1.5 text-xs transition-colors p-1 rounded",
+                                tts.isSpeaking && tts.activeMessageId === String(idx)
+                                  ? "text-primary font-semibold"
+                                  : "text-muted-foreground hover:text-foreground"
+                              )}
+                              title={
+                                tts.isSpeaking && tts.activeMessageId === String(idx)
+                                  ? "Stop reading"
+                                  : "Listen to explanation"
+                              }
+                            >
+                              {tts.isSpeaking && tts.activeMessageId === String(idx) ? (
+                                <>
+                                  <VolumeX className="w-3.5 h-3.5 text-primary animate-pulse" />
+                                  <span className="text-primary">Stop</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Volume2 className="w-3.5 h-3.5" />
+                                  <span>Listen</span>
+                                </>
+                              )}
+                            </button>
+
+                            {/* Playback speed toggle */}
+                            {tts.isSpeaking && tts.activeMessageId === String(idx) && (
+                              <button
+                                onClick={() => {
+                                  const speeds = [1.0, 1.25, 1.5, 2.0];
+                                  const currentIdx = speeds.indexOf(tts.rate);
+                                  const nextSpeed = speeds[(currentIdx + 1) % speeds.length];
+                                  tts.setRate(nextSpeed);
+                                }}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-mono font-medium hover:bg-primary/20 transition-colors"
+                                title="Change voice speed"
+                              >
+                                {tts.rate}x
+                              </button>
+                            )}
+                          </div>
+                        )}
+
                         <button
                           onClick={() => handleCopy(msg.content, idx)}
                           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors p-1"

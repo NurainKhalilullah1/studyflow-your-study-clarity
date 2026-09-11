@@ -12,7 +12,8 @@ import {
   Settings, 
   LogOut,
   Shield,
-  Layers
+  Layers,
+  Headphones
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -39,6 +40,7 @@ const menuItems = [
   { title: "Assignments", url: "/assignments", icon: CalendarCheck },
   { title: "AI Tutor", url: "/tutor", icon: Sparkles },
   { title: "My Flashcards", url: "/flashcards", icon: Layers },
+  { title: "Focus Room", url: "/focus-room", icon: Headphones },
   { title: "Quiz History", url: "/quiz-history", icon: ClipboardList },
   { title: "Community", url: "/community", icon: Users },
   { title: "Leaderboard", url: "/leaderboard", icon: Trophy },

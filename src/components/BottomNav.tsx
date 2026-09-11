@@ -1,16 +1,16 @@
 import { useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, FolderOpen, Sparkles, Trophy, Users, Shield, Layers, ClipboardList } from "lucide-react";
+import { LayoutDashboard, FolderOpen, Sparkles, Trophy, Users, Shield, Layers, Headphones } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsAdmin } from "@/hooks/useSubscription";
 
 const navItems = [
-  { title: "Home", url: "/dashboard", icon: LayoutDashboard },
-  { title: "Docs", url: "/documents", icon: FolderOpen },
-  { title: "AI Tutor", url: "/tutor", icon: Sparkles },
-  { title: "Quiz", url: "/quiz-history", icon: ClipboardList },
-  { title: "Cards", url: "/flashcards", icon: Layers },
-  { title: "Ranks", url: "/leaderboard", icon: Trophy },
-  { title: "Community", url: "/community", icon: Users },
+  { title: "Home",    url: "/dashboard",  icon: LayoutDashboard },
+  { title: "Docs",    url: "/documents",  icon: FolderOpen },
+  { title: "AI Tutor",url: "/tutor",      icon: Sparkles },
+  { title: "Focus",   url: "/focus-room", icon: Headphones },
+  { title: "Cards",   url: "/flashcards", icon: Layers },
+  { title: "Ranks",   url: "/leaderboard",icon: Trophy },
+  { title: "Community",url:"/community",  icon: Users },
 ];
 
 const BottomNav = () => {

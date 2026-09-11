@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { ClipboardList, Calendar, CheckCircle2, AlertCircle, Upload, Sparkles } from "lucide-react";
+import { ClipboardList, Calendar, CheckCircle2, AlertCircle, Upload, Sparkles, BrainCircuit } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -14,6 +14,7 @@ import { DashboardPomodoroCard } from "@/components/dashboard/DashboardPomodoroC
 import { XPProgressCard } from "@/components/dashboard/XPProgressCard";
 import { AchievementsCard } from "@/components/dashboard/AchievementsCard";
 import { useStudyEvents } from "@/hooks/useStudyStats";
+import { useDueFlashcards } from "@/hooks/useFlashcards";
 const getGreeting = () => {
   const hour = new Date().getHours();
   if (hour < 12) return "Good morning";
@@ -24,6 +25,7 @@ const getGreeting = () => {
 const Dashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { dueCount = 0 } = useDueFlashcards(user?.id);
   const userName = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Student";
 
   const [stats, setStats] = useState([
@@ -96,6 +98,36 @@ const Dashboard = () => {
           </h1>
           <p className="text-muted-foreground mt-1">Here is your academic overview.</p>
         </motion.div>
+
+        {dueCount > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-2xl p-4 sm:p-5 border border-primary/30 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-primary/20 flex items-center justify-center text-primary shrink-0 shadow-inner">
+                <BrainCircuit className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="font-semibold text-foreground text-sm sm:text-base">
+                  {dueCount} Flashcard{dueCount !== 1 ? "s" : ""} Due for Spaced Repetition Review
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Reinforce these concepts before memory decay sets in (~{Math.max(1, Math.ceil(dueCount * 0.4))} min)
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="glow"
+              onClick={() => navigate("/flashcards")}
+              className="shrink-0 font-medium text-xs sm:text-sm"
+            >
+              Start Daily Review →
+            </Button>
+          </motion.div>
+        )}
 
         {/* Pomodoro Timer, Weekly Goals and Study Statistics */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

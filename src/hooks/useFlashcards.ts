@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { calculateSM2, isCardDue, type SM2Rating, type SM2CardData } from '@/utils/spacedRepetition';
 
-export interface Flashcard {
+export interface Flashcard extends SM2CardData {
   id: string;
   user_id: string;
   session_id: string | null;
@@ -29,6 +30,16 @@ export const useFlashcards = (userId: string | undefined) => {
   });
 };
 
+export const useDueFlashcards = (userId: string | undefined) => {
+  const query = useFlashcards(userId);
+  const dueCards = query.data?.filter(isCardDue) || [];
+  return {
+    ...query,
+    dueCards,
+    dueCount: dueCards.length,
+  };
+};
+
 export const useFlashcardsBySession = (sessionId: string | undefined) => {
   return useQuery({
     queryKey: ['flashcards', 'session', sessionId],
@@ -44,6 +55,36 @@ export const useFlashcardsBySession = (sessionId: string | undefined) => {
       return data as Flashcard[];
     },
     enabled: !!sessionId,
+  });
+};
+
+export const useReviewFlashcard = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      cardId,
+      rating,
+      currentCard,
+    }: {
+      cardId: string;
+      rating: SM2Rating;
+      currentCard: SM2CardData;
+    }) => {
+      const sm2Update = calculateSM2(currentCard, rating);
+      const { data, error } = await supabase
+        .from('flashcards')
+        .update(sm2Update as any)
+        .eq('id', cardId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['flashcards'] });
+    },
   });
 };
 

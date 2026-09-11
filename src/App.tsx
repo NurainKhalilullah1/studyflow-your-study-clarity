@@ -36,6 +36,7 @@ import Upgrade from "./pages/Upgrade";
 import NotFound from "./pages/NotFound";
 import DownloadPage from "./pages/Download";
 import SharedQuiz from "@/pages/SharedQuiz";
+import FocusRoom from "./pages/FocusRoom";
 import { AppUpdateGuard } from "@/components/AppUpdateGuard";
 import InitialRedirect from "@/components/InitialRedirect";
 import { NotificationPrompt } from "@/components/NotificationPrompt";
@@ -205,6 +206,14 @@ const App = () => {
                           element={
                             <ProtectedRoute>
                               <Admin />
+                            </ProtectedRoute>
+                          }
+                        />
+                        <Route
+                          path="/focus-room"
+                          element={
+                            <ProtectedRoute>
+                              <FocusRoom />
                             </ProtectedRoute>
                           }
                         />
