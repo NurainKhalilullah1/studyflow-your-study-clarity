@@ -9,7 +9,7 @@ const corsHeaders = {
 // ── Brand colours & shared styles ─────────────────────────────────────────
 const BRAND = "#7C3AED";
 const BRAND_LIGHT = "#EDE9FE";
-const APP_URL = "https://study-flow-app.vercel.app"; // update to your real domain when ready
+const APP_URL = Deno.env.get("APP_URL") || "https://www.nexgenu.cyou";
 
 const emailBase = (preheader: string, body: string) => `
 <!DOCTYPE html>

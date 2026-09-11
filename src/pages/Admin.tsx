@@ -78,7 +78,7 @@ const DEFAULT_TEMPLATES = {
 </ul>
 <p>Let's get you started!</p>`,
     ctaText: "Go to StudyFlow",
-    ctaUrl: "https://studyflow.vercel.app",
+    ctaUrl: "https://www.nexgenu.cyou",
   },
   studyGroup: {
     label: "📚 Study Group Joined",
@@ -94,7 +94,7 @@ const DEFAULT_TEMPLATES = {
 </ul>
 <p>Head to the Community tab to start connecting!</p>`,
     ctaText: "Open Community",
-    ctaUrl: "https://studyflow.vercel.app/community",
+    ctaUrl: "https://www.nexgenu.cyou/community",
   },
   upgradeRequest: {
     label: "⏳ Upgrade Request Received",
@@ -107,7 +107,7 @@ const DEFAULT_TEMPLATES = {
 <p>If you have any questions, feel free to reach out to us.</p>
 <p style="color:#888;font-size:14px;">Reference: {{reference}}</p>`,
     ctaText: "Go to Settings",
-    ctaUrl: "https://studyflow.vercel.app/settings",
+    ctaUrl: "https://www.nexgenu.cyou/settings",
   },
   upgradeApproved: {
     label: "✅ Upgrade Approved",
@@ -118,7 +118,7 @@ const DEFAULT_TEMPLATES = {
 <p>Your subscription has been upgraded to the <strong>{{tier}} Plan</strong>! Your new features are now active.</p>
 <p>Enjoy everything StudyFlow has to offer. Thank you for supporting us! 🙏</p>`,
     ctaText: "Explore New Features",
-    ctaUrl: "https://studyflow.vercel.app",
+    ctaUrl: "https://www.nexgenu.cyou",
   },
   upgradeRejected: {
     label: "❌ Upgrade Rejected",

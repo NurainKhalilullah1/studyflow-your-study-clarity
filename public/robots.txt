@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://lumina-studyflow.vercel.app/sitemap.xml
+Sitemap: https://www.nexgenu.cyou/sitemap.xml

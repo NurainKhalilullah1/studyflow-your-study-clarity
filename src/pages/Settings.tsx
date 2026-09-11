@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { User, Shield, Loader2, Save, LogOut, BookOpen, Database, Info, Trash2, Download, Camera, GraduationCap, Crown, Bell, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -877,8 +877,8 @@ const Settings = () => {
             <p>Made with ❤️ for students everywhere</p>
             <div className="flex gap-4 pt-2">
               <a href="#" className="text-primary hover:underline">Help Center</a>
-              <a href="https://study-flow-app.vercel.app/privacy" className="text-primary hover:underline">Privacy Policy</a>
-              <a href="https://study-flow-app.vercel.app/terms" className="text-primary hover:underline">Terms of Service</a>
+              <Link to="/privacy" className="text-primary hover:underline">Privacy Policy</Link>
+              <Link to="/terms" className="text-primary hover:underline">Terms of Service</Link>
             </div>
           </div>
         </div>
