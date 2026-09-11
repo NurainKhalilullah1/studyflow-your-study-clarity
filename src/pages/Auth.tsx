@@ -84,6 +84,20 @@ const Auth = () => {
     }
   }, [user, loading, isSessionVerified, navigate, location.state]);
 
+  // ── Notify user if previous session expired due to inactivity ─────────────
+  useEffect(() => {
+    const expiredReason = sessionStorage.getItem("studyflow_session_expired_reason");
+    if (expiredReason) {
+      sessionStorage.removeItem("studyflow_session_expired_reason");
+      toast({
+        title: "Session Expired",
+        description: expiredReason,
+        variant: "destructive",
+        duration: 8000,
+      });
+    }
+  }, [toast]);
+
   // ── Google OAuth callback: user arrived, trigger OTP ─────────────────────
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

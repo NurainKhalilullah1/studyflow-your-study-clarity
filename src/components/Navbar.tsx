@@ -5,9 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { StudyFlowLogo } from "./StudyFlowLogo";
 import { ThemeToggle } from "./ThemeToggle";
+import { useAuth } from "@/contexts/AuthContext";
 
 export const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const { user, isSessionVerified } = useAuth();
+  const isAuthenticated = Boolean(user && isSessionVerified);
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 glass border-b border-border/40">
@@ -38,13 +41,24 @@ export const Navbar = () => {
             <Button variant="ghost" size="sm" asChild>
               <Link to="/about">About</Link>
             </Button>
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/auth">Login</Link>
-            </Button>
-            <ThemeToggle />
-            <Button variant="glow" size="sm" asChild>
-              <Link to="/auth">Get Started</Link>
-            </Button>
+            {isAuthenticated ? (
+              <>
+                <ThemeToggle />
+                <Button variant="glow" size="sm" asChild>
+                  <Link to="/dashboard">Dashboard</Link>
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/auth">Login</Link>
+                </Button>
+                <ThemeToggle />
+                <Button variant="glow" size="sm" asChild>
+                  <Link to="/auth">Get Started</Link>
+                </Button>
+              </>
+            )}
           </motion.div>
 
           {/* Mobile Menu Button */}
@@ -78,16 +92,30 @@ export const Navbar = () => {
                 <Button variant="ghost" className="justify-start" asChild onClick={() => setIsOpen(false)}>
                   <Link to="/about">About</Link>
                 </Button>
-                <div className="flex items-center justify-between">
-                  <Button variant="ghost" className="justify-start flex-1" asChild onClick={() => setIsOpen(false)}>
-                    <Link to="/auth">Login</Link>
-                  </Button>
-                  <ThemeToggle />
-                </div>
+                {isAuthenticated ? (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground px-2">Theme</span>
+                      <ThemeToggle />
+                    </div>
+                    <Button variant="glow" asChild onClick={() => setIsOpen(false)}>
+                      <Link to="/dashboard">Dashboard</Link>
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <Button variant="ghost" className="justify-start flex-1" asChild onClick={() => setIsOpen(false)}>
+                        <Link to="/auth">Login</Link>
+                      </Button>
+                      <ThemeToggle />
+                    </div>
 
-                <Button variant="glow" asChild onClick={() => setIsOpen(false)}>
-                  <Link to="/auth">Get Started</Link>
-                </Button>
+                    <Button variant="glow" asChild onClick={() => setIsOpen(false)}>
+                      <Link to="/auth">Get Started</Link>
+                    </Button>
+                  </>
+                )}
               </div>
             </motion.div>
           )}

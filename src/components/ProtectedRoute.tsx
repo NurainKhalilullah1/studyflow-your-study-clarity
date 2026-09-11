@@ -11,11 +11,17 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
-  const { user, loading: authLoading, isSessionVerified } = useAuth();
+  const { user, loading: authLoading, isSessionVerified, recordActivity } = useAuth();
   const { data: profile, isLoading: profileLoading } = useProfile(user?.id);
   const location = useLocation();
   const { toast } = useToast();
   const [hasShownToast, setHasShownToast] = useState(false);
+
+  useEffect(() => {
+    if (user?.id) {
+      recordActivity(user.id);
+    }
+  }, [user?.id, location.pathname, recordActivity]);
 
   // Show loading while checking auth
   if (authLoading) {

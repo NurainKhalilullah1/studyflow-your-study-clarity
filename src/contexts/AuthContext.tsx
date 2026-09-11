@@ -1,9 +1,64 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useRef, useCallback, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { Capacitor } from "@capacitor/core";
+import { App as CapacitorApp } from "@capacitor/app";
 import { Browser } from "@capacitor/browser";
 import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
+
+// 7 days in milliseconds for inactivity timeout
+export const SESSION_INACTIVITY_LIMIT_MS = 7 * 24 * 60 * 60 * 1000;
+export const LAST_ACTIVE_KEY_PREFIX = "studyflow_last_active_";
+export const VERIFIED_KEY_PREFIX = "studyflow_session_verified_";
+export const SESSION_EXPIRED_REASON_KEY = "studyflow_session_expired_reason";
+
+export const getLastActiveKey = (userId: string) => `${LAST_ACTIVE_KEY_PREFIX}${userId}`;
+export const getVerifiedKey = (userId: string) => `${VERIFIED_KEY_PREFIX}${userId}`;
+
+export const recordActivity = (userId?: string | null, force = false) => {
+  if (!userId) return;
+  const now = Date.now();
+  const key = getLastActiveKey(userId);
+  if (!force) {
+    const last = localStorage.getItem(key);
+    // Throttle localStorage writes to at most once every 30 seconds
+    if (last && now - Number(last) < 30_000) {
+      return;
+    }
+  }
+  try {
+    localStorage.setItem(key, now.toString());
+  } catch {
+    // ignore potential storage quota errors
+  }
+};
+
+export const isSessionExpiredDueToInactivity = (userId?: string | null): boolean => {
+  if (!userId) return true;
+  const lastActiveStr = localStorage.getItem(getLastActiveKey(userId));
+  const verifiedStr = localStorage.getItem(getVerifiedKey(userId));
+
+  // If no timestamp exists yet, session does not exceed the limit
+  if (!lastActiveStr && !verifiedStr) {
+    return false;
+  }
+
+  const effectiveTimestamp = Math.max(
+    Number(lastActiveStr) || 0,
+    Number(verifiedStr) || 0
+  );
+
+  if (!effectiveTimestamp) return false;
+  return Date.now() - effectiveTimestamp > SESSION_INACTIVITY_LIMIT_MS;
+};
+
+export const checkIsVerified = (userId?: string | null): boolean => {
+  if (!userId) return false;
+  if (isSessionExpiredDueToInactivity(userId)) {
+    return false;
+  }
+  return Boolean(localStorage.getItem(getVerifiedKey(userId)));
+};
 
 interface AuthContextType {
   user: User | null;
@@ -19,6 +74,7 @@ interface AuthContextType {
   verifyCode: (email: string, code: string) => Promise<{ ok: boolean; error?: string }>;
   markSessionVerified: (userId?: string) => void;
   clearSessionVerified: (userId?: string) => void;
+  recordActivity: (userId?: string, force?: boolean) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -29,13 +85,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [isSessionVerified, setIsSessionVerified] = useState(false);
 
-  const checkIsVerified = (userId?: string | null) => {
-    if (!userId) return false;
-    return Boolean(localStorage.getItem(`studyflow_session_verified_${userId}`));
-  };
+  const userRef = useRef<User | null>(null);
+  userRef.current = user;
+  const sessionRef = useRef<Session | null>(null);
+  sessionRef.current = session;
+
+  const handleInactivityExpiry = useCallback(async (targetUserId?: string | null) => {
+    const id = targetUserId || userRef.current?.id || sessionRef.current?.user?.id;
+    if (id) {
+      localStorage.removeItem(getVerifiedKey(id));
+      localStorage.removeItem(getLastActiveKey(id));
+    }
+    try {
+      sessionStorage.setItem(
+        SESSION_EXPIRED_REASON_KEY,
+        "Your session expired after 7 days of inactivity. Please log in again."
+      );
+    } catch {
+      // ignore
+    }
+    setSession(null);
+    setUser(null);
+    setIsSessionVerified(false);
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn("Sign out during inactivity expiry failed:", err);
+    }
+  }, []);
 
   useEffect(() => {
-    let initialValidationDone = false;
     // Initialize Native Google Auth
     if (Capacitor.isNativePlatform()) {
       try {
@@ -45,62 +124,157 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     }
 
-    // Validate session with server, not just local token
-    supabase.auth.getUser().then(async ({ data: { user }, error }) => {
-      if (error || !user) {
-        // Token is invalid or user was deleted - clear local session
-        // IMPORTANT: Never eagerly sign out if we're in the middle of an OAuth redirect 
-        // OR if this is a fresh launch where we already have no session (prevents potential null errors)
-        const hasHashToken = window.location.hash.includes('access_token');
-        if (!hasHashToken && (session || user)) {
+    // Hydrate session and auto-refresh expired access tokens via getSession()
+    const initAuth = async () => {
+      try {
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+
+        if (error || !initialSession || !initialSession.user) {
           setSession(null);
           setUser(null);
           setIsSessionVerified(false);
-          await supabase.auth.signOut({ scope: "local" });
-        }
-      } else {
-        // Valid user, now get the full session
-        const { data: { session } } = await supabase.auth.getSession();
-        setSession(session);
-        setUser(session?.user ?? null);
-        setIsSessionVerified(checkIsVerified(session?.user?.id));
-      }
-      initialValidationDone = true;
-      setLoading(false);
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        // Ignore INITIAL_SESSION during startup to prevent stale cached sessions
-        if (event === "INITIAL_SESSION" && !initialValidationDone) {
+          setLoading(false);
           return;
         }
-        setSession(session);
-        const currentUser = session?.user ?? null;
-        setUser(currentUser);
-        setIsSessionVerified(checkIsVerified(currentUser?.id));
+
+        const currentUserId = initialSession.user.id;
+
+        // Check if session has expired after 7 days of inactivity
+        if (isSessionExpiredDueToInactivity(currentUserId)) {
+          await handleInactivityExpiry(currentUserId);
+          setLoading(false);
+          return;
+        }
+
+        // Active session within 7 days
+        setSession(initialSession);
+        setUser(initialSession.user);
+        setIsSessionVerified(checkIsVerified(currentUserId));
+        recordActivity(currentUserId, true);
+      } catch (err) {
+        console.error("Auth initialization error:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initAuth();
+
+    // Listen for auth changes (token refreshed, signed in, signed out)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, currentSession) => {
+        if (event === "SIGNED_OUT" || !currentSession?.user) {
+          setSession(null);
+          setUser(null);
+          setIsSessionVerified(false);
+          setLoading(false);
+          return;
+        }
+
+        const currentUserId = currentSession.user.id;
+
+        // Verify inactivity expiry
+        if (isSessionExpiredDueToInactivity(currentUserId)) {
+          await handleInactivityExpiry(currentUserId);
+          setLoading(false);
+          return;
+        }
+
+        setSession(currentSession);
+        setUser(currentSession.user);
+        setIsSessionVerified(checkIsVerified(currentUserId));
+
+        if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+          recordActivity(currentUserId, true);
+        }
+
         setLoading(false);
       }
     );
 
-    return () => subscription.unsubscribe();
-  }, []);
+    // User activity listeners to renew rolling inactivity timer
+    const onUserActivity = () => {
+      const activeUserId = userRef.current?.id || sessionRef.current?.user?.id;
+      if (activeUserId) {
+        if (isSessionExpiredDueToInactivity(activeUserId)) {
+          handleInactivityExpiry(activeUserId);
+          return;
+        }
+        recordActivity(activeUserId);
+      }
+    };
+
+    const events = ["mousedown", "keydown", "touchstart", "scroll", "click"];
+    events.forEach((evt) => {
+      window.addEventListener(evt, onUserActivity, { passive: true });
+    });
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        onUserActivity();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onUserActivity);
+
+    // Capacitor app state change listener (when mobile app resumes from background)
+    let capacitorListenerRemove: (() => void) | null = null;
+    if (Capacitor.isNativePlatform()) {
+      import("@capacitor/app").then(({ App: CapApp }) => {
+        CapApp.addListener("appStateChange", ({ isActive }) => {
+          if (isActive) {
+            onUserActivity();
+          }
+        }).then((handle) => {
+          capacitorListenerRemove = () => handle.remove();
+        });
+      }).catch((e) => console.warn("Capacitor App listener error:", e));
+    }
+
+    // Periodic check every 60 seconds to detect inactivity expiry while tab is open
+    const intervalId = setInterval(() => {
+      const activeUserId = userRef.current?.id || sessionRef.current?.user?.id;
+      if (activeUserId && isSessionExpiredDueToInactivity(activeUserId)) {
+        handleInactivityExpiry(activeUserId);
+      }
+    }, 60_000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearInterval(intervalId);
+      events.forEach((evt) => {
+        window.removeEventListener(evt, onUserActivity);
+      });
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onUserActivity);
+      if (capacitorListenerRemove) capacitorListenerRemove();
+    };
+  }, [handleInactivityExpiry]);
 
   const markSessionVerified = (targetUserId?: string) => {
-    const id = targetUserId || user?.id;
+    const id = targetUserId || user?.id || session?.user?.id;
     if (id) {
-      localStorage.setItem(`studyflow_session_verified_${id}`, Date.now().toString());
+      const now = Date.now().toString();
+      localStorage.setItem(getVerifiedKey(id), now);
+      localStorage.setItem(getLastActiveKey(id), now);
     }
     setIsSessionVerified(true);
   };
 
   const clearSessionVerified = (targetUserId?: string) => {
-    const id = targetUserId || user?.id;
+    const id = targetUserId || user?.id || session?.user?.id;
     if (id) {
-      localStorage.removeItem(`studyflow_session_verified_${id}`);
+      localStorage.removeItem(getVerifiedKey(id));
+      localStorage.removeItem(getLastActiveKey(id));
     }
     setIsSessionVerified(false);
+  };
+
+  const handleRecordActivity = (targetUserId?: string, force = false) => {
+    const id = targetUserId || userRef.current?.id || sessionRef.current?.user?.id;
+    if (id) {
+      recordActivity(id, force);
+    }
   };
 
   const sendVerificationCode = async (email: string, purpose = "signin", name?: string) => {
@@ -211,8 +385,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signOut = async () => {
-    clearSessionVerified();
-    await supabase.auth.signOut();
+    const currentId = userRef.current?.id || sessionRef.current?.user?.id;
+    clearSessionVerified(currentId);
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      setUser(null);
+      setSession(null);
+      setIsSessionVerified(false);
+    }
   };
 
   return (
@@ -230,6 +411,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       verifyCode,
       markSessionVerified,
       clearSessionVerified,
+      recordActivity: handleRecordActivity,
     }}>
       {children}
     </AuthContext.Provider>
