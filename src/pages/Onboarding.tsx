@@ -62,6 +62,19 @@ const Onboarding = () => {
           p_course_of_study: courseOfStudy,
           p_level: level,
         });
+
+        // Send study community welcome email
+        supabase.functions.invoke("send-email", {
+          body: {
+            type: "studyGroup",
+            userId: user.id,
+            data: {
+              university: selectedUniversity,
+              course: courseOfStudy,
+              level,
+            },
+          },
+        }).catch((e) => console.warn("Failed to send study group email:", e));
       }
       
       toast({

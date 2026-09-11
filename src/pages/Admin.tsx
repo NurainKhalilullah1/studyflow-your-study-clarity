@@ -243,9 +243,32 @@ const Admin = () => {
           .update({ subscription_tier: request.requested_tier, storage_limit_bytes: storageLimit } as any)
           .eq("id", request.user_id);
         if (profileError) throw profileError;
+
+        // Automatically send celebration email to student
+        supabase.functions.invoke("send-email", {
+          body: {
+            type: "upgradeApproved",
+            userId: request.user_id,
+            data: {
+              tier: request.requested_tier === "premium" ? "Premium" : "Pro",
+            },
+          },
+        }).catch((err) => console.warn("Failed to send approval email:", err));
+      } else if (action === "rejected") {
+        // Automatically send rejection notice email to student
+        supabase.functions.invoke("send-email", {
+          body: {
+            type: "upgradeRejected",
+            userId: request.user_id,
+            data: {
+              tier: request.requested_tier === "premium" ? "Premium" : "Pro",
+              reason: adminNotes[requestId] || "",
+            },
+          },
+        }).catch((err) => console.warn("Failed to send rejection email:", err));
       }
 
-      toast({ title: `Request ${action}`, description: `The upgrade request has been ${action}.` });
+      toast({ title: `Request ${action}`, description: `The upgrade request has been ${action} and email notification sent.` });
       queryClient.invalidateQueries({ queryKey: ["admin-upgrade-requests"] });
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });

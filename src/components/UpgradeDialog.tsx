@@ -69,6 +69,19 @@ const UpgradeDialog = ({ open, onOpenChange, selectedTier }: UpgradeDialogProps)
 
       if (error) throw error;
 
+      // Automatically send confirmation email to student (and alert admin)
+      supabase.functions.invoke("send-email", {
+        body: {
+          type: "upgradeRequest",
+          userId: user.id,
+          data: {
+            tier: config.name,
+            amount: config.price.toLocaleString(),
+            reference: paymentReference || "Bank Transfer",
+          },
+        },
+      }).catch((e) => console.warn("Auto email send error:", e));
+
       toast({ title: "Request submitted!", description: "We'll review your payment and upgrade your account." });
       await refetchRequests();
       onOpenChange(false);
