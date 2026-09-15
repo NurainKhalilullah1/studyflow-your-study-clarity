@@ -27,18 +27,16 @@ import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type TimerMode = "focus" | "short_break" | "long_break";
 
-interface Sound {
+interface SoundDef {
   id: string;
   label: string;
   icon: React.ElementType;
   color: string;
-  /** Oscillator-based synthetic tone descriptor (no external files needed) */
-  freq: number;
-  type: OscillatorType;
+  description: string;
 }
 
 interface Task {
@@ -47,145 +45,280 @@ interface Task {
   done: boolean;
 }
 
-// ─── Sound engine (Web Audio API) ────────────────────────────────────────────
+// ─── Tone.js Audio Engine ─────────────────────────────────────────────────────
+// Lazy-imported so it doesn't block the initial render.
 
-class AmbientSoundEngine {
-  private ctx: AudioContext | null = null;
-  private nodes: Map<string, { osc: OscillatorNode | null; gain: GainNode; noise?: AudioBufferSourceNode }> = new Map();
+type ToneModule = typeof import("tone");
 
-  private getCtx(): AudioContext {
-    if (!this.ctx || this.ctx.state === "closed") {
-      this.ctx = new AudioContext();
-    }
-    return this.ctx;
-  }
-
-  /** Create pink-ish noise buffer */
-  private createNoiseBuffer(ctx: AudioContext): AudioBuffer {
-    const bufferSize = ctx.sampleRate * 2;
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-    for (let i = 0; i < bufferSize; i++) {
-      const white = Math.random() * 2 - 1;
-      b0 = 0.99886 * b0 + white * 0.0555179;
-      b1 = 0.99332 * b1 + white * 0.0750759;
-      b2 = 0.96900 * b2 + white * 0.1538520;
-      b3 = 0.86650 * b3 + white * 0.3104856;
-      b4 = 0.55000 * b4 + white * 0.5329522;
-      b5 = -0.7616 * b5 - white * 0.0168980;
-      data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
-      b6 = white * 0.115926;
-    }
-    return buffer;
-  }
-
-  play(soundId: string, freq: number, oscType: OscillatorType, volume: number) {
-    const ctx = this.getCtx();
-    if (ctx.state === "suspended") ctx.resume();
-
-    // Stop existing node for this sound
-    this.stop(soundId);
-
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(volume * 0.15, ctx.currentTime);
-    gain.connect(ctx.destination);
-
-    let osc: OscillatorNode | null = null;
-    let noiseNode: AudioBufferSourceNode | undefined;
-
-    if (freq === 0) {
-      // Noise-based sound (rain, ocean, wind, fire)
-      const buffer = this.createNoiseBuffer(ctx);
-      noiseNode = ctx.createBufferSource();
-      noiseNode.buffer = buffer;
-      noiseNode.loop = true;
-
-      // Shape the noise with a biquad filter
-      const filter = ctx.createBiquadFilter();
-      filter.type = oscType === "sawtooth" ? "lowpass" : oscType === "square" ? "bandpass" : "highpass";
-      filter.frequency.value = oscType === "sawtooth" ? 800 : oscType === "square" ? 400 : 1200;
-      filter.Q.value = 0.5;
-
-      noiseNode.connect(filter);
-      filter.connect(gain);
-      noiseNode.start();
-    } else {
-      // Tone-based sound (binaural, lo-fi hum, etc.)
-      osc = ctx.createOscillator();
-      osc.type = oscType;
-      osc.frequency.setValueAtTime(freq, ctx.currentTime);
-
-      // Add subtle LFO vibrato
-      const lfo = ctx.createOscillator();
-      lfo.type = "sine";
-      lfo.frequency.value = 0.1;
-      const lfoGain = ctx.createGain();
-      lfoGain.gain.value = 2;
-      lfo.connect(lfoGain);
-      lfoGain.connect(osc.frequency);
-      lfo.start();
-
-      osc.connect(gain);
-      osc.start();
-    }
-
-    this.nodes.set(soundId, { osc, gain, noise: noiseNode });
-  }
-
-  setVolume(soundId: string, volume: number) {
-    const node = this.nodes.get(soundId);
-    if (node && this.ctx) {
-      node.gain.gain.setTargetAtTime(volume * 0.15, this.ctx.currentTime, 0.1);
-    }
-  }
-
-  stop(soundId: string) {
-    const node = this.nodes.get(soundId);
-    if (node) {
-      try {
-        node.osc?.stop();
-        node.noise?.stop();
-      } catch (_) { /* already stopped */ }
-      this.nodes.delete(soundId);
-    }
-  }
-
-  stopAll() {
-    for (const id of this.nodes.keys()) {
-      this.stop(id);
-    }
-  }
+interface SoundNode {
+  stop: () => void;
+  setVolume: (v: number) => void;
 }
 
-// ─── Sounds config ────────────────────────────────────────────────────────────
+async function getTone(): Promise<ToneModule> {
+  return import("tone");
+}
 
-const SOUNDS: Sound[] = [
-  { id: "rain",    label: "Rain",        icon: Droplets, color: "from-blue-500/20 to-cyan-500/20",    freq: 0,   type: "sine" },
-  { id: "forest",  label: "Forest",      icon: TreePine, color: "from-green-500/20 to-emerald-500/20", freq: 0,   type: "highpass" },
-  { id: "ocean",   label: "Ocean",       icon: Waves,    color: "from-teal-500/20 to-blue-400/20",    freq: 0,   type: "sawtooth" },
-  { id: "fire",    label: "Fireplace",   icon: Flame,    color: "from-orange-500/20 to-red-500/20",   freq: 0,   type: "square" },
-  { id: "wind",    label: "Wind",        icon: Wind,     color: "from-slate-400/20 to-blue-300/20",   freq: 0,   type: "triangle" },
-  { id: "clouds",  label: "White Noise", icon: Cloud,    color: "from-gray-300/20 to-slate-400/20",   freq: 0,   type: "bandpass" as OscillatorType },
-  { id: "binaural",label: "Focus Tone",  icon: Brain,    color: "from-purple-500/20 to-violet-500/20",freq: 40,  type: "sine" },
-  { id: "lofi",    label: "Lo-Fi Hum",   icon: Music2,   color: "from-pink-500/20 to-rose-400/20",    freq: 110, type: "triangle" },
+/**
+ * Builds a rich, multi-layer ambient sound for each ID using Tone.js.
+ * Returns a SoundNode with stop() and setVolume() controls.
+ */
+async function buildSound(id: string, volume: number): Promise<SoundNode> {
+  const Tone = await getTone();
+
+  await Tone.start();
+
+  // Master gain for this sound (0–1)
+  const masterGain = new Tone.Gain(volume).toDestination();
+
+  // ── Reverb tail shared across layers ──
+  const reverb = new Tone.Reverb({ decay: 3.5, wet: 0.45 }).connect(masterGain);
+  await reverb.generate();
+
+  const nodes: Tone.ToneAudioNode[] = [reverb, masterGain];
+
+  switch (id) {
+    // ── RAIN ─────────────────────────────────────────────────────────────────
+    // Heavy pink noise → low-pass at 800 Hz → slow LFO on volume (rain intensity)
+    case "rain": {
+      const noise = new Tone.Noise("pink").start();
+      const filter = new Tone.Filter({ frequency: 800, type: "lowpass", rolloff: -24 });
+      const lfo = new Tone.LFO({ frequency: 0.08, min: 0.4, max: 1.0 }).start();
+      const lfoGain = new Tone.Gain(1);
+      lfo.connect(lfoGain.gain);
+
+      // Second layer: high-frequency splatter (lighter drops)
+      const noise2 = new Tone.Noise("white").start();
+      const filter2 = new Tone.Filter({ frequency: 4000, type: "bandpass", Q: 0.8 });
+      const attn2 = new Tone.Gain(0.08);
+
+      noise.chain(filter, lfoGain, reverb);
+      noise2.chain(filter2, attn2, reverb);
+
+      nodes.push(noise, filter, lfo, lfoGain, noise2, filter2, attn2);
+      break;
+    }
+
+    // ── FOREST ───────────────────────────────────────────────────────────────
+    // Soft pink noise (wind through leaves) + periodic bird-like chirps via FM synth
+    case "forest": {
+      const noise = new Tone.Noise("pink").start();
+      const filter = new Tone.Filter({ frequency: 1800, type: "bandpass", Q: 0.4 });
+      const attn = new Tone.Gain(0.3);
+      noise.chain(filter, attn, reverb);
+
+      // Bird chirps: FM synth triggered randomly
+      const bird = new Tone.FMSynth({
+        harmonicity: 8,
+        modulationIndex: 2,
+        oscillator: { type: "sine" },
+        envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 },
+        modulation: { type: "sine" },
+        modulationEnvelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 },
+        volume: -18,
+      }).connect(reverb);
+
+      // Schedule chirps at random intervals
+      const chirpLoop = new Tone.Loop(() => {
+        if (Math.random() > 0.4) {
+          const notes = ["C6", "E6", "G6", "A6", "D6", "F#6"];
+          const note = notes[Math.floor(Math.random() * notes.length)];
+          bird.triggerAttackRelease(note, "16n");
+          // Sometimes a second quick chirp
+          if (Math.random() > 0.6) {
+            Tone.getDraw().schedule(() => {
+              bird.triggerAttackRelease(note, "16n", Tone.now() + 0.12);
+            }, Tone.now());
+          }
+        }
+      }, `${(Math.random() * 3 + 1.5).toFixed(1)}s`).start(0);
+
+      nodes.push(noise, filter, attn, bird, chirpLoop);
+      break;
+    }
+
+    // ── OCEAN ────────────────────────────────────────────────────────────────
+    // Brown noise + slow wave LFO (0.12 Hz) + deep low-end rumble
+    case "ocean": {
+      const noise = new Tone.Noise("brown").start();
+      const filter = new Tone.Filter({ frequency: 600, type: "lowpass", rolloff: -12 });
+
+      // Wave LFO — slow swell and fade like real waves
+      const waveLfo = new Tone.LFO({ frequency: 0.12, min: 0.1, max: 0.9 }).start();
+      const waveGain = new Tone.Gain(0.6);
+      waveLfo.connect(waveGain.gain);
+
+      // Deeper rumble layer
+      const noise2 = new Tone.Noise("brown").start();
+      const bassFilter = new Tone.Filter({ frequency: 120, type: "lowpass" });
+      const bassGain = new Tone.Gain(0.25);
+
+      noise.chain(filter, waveGain, reverb);
+      noise2.chain(bassFilter, bassGain, masterGain);
+
+      nodes.push(noise, filter, waveLfo, waveGain, noise2, bassFilter, bassGain);
+      break;
+    }
+
+    // ── FIRE ─────────────────────────────────────────────────────────────────
+    // Brown noise → warmth filter + random crackle pops via synth
+    case "fire": {
+      const noise = new Tone.Noise("brown").start();
+      const filter = new Tone.Filter({ frequency: 350, type: "lowpass", rolloff: -12 });
+      const warmGain = new Tone.Gain(0.5);
+
+      // Gentle LFO simulates flicker
+      const flickerLfo = new Tone.LFO({ frequency: 0.6, min: 0.35, max: 0.65 }).start();
+      flickerLfo.connect(warmGain.gain);
+
+      // Crackle pops
+      const crackle = new Tone.MembraneSynth({
+        pitchDecay: 0.008,
+        octaves: 1,
+        envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.05 },
+        volume: -28,
+      }).connect(reverb);
+
+      const crackleLoop = new Tone.Loop(() => {
+        if (Math.random() > 0.35) {
+          crackle.triggerAttackRelease(`${(Math.random() * 60 + 80).toFixed(0)}`, "32n");
+        }
+      }, "0.3s").start(0);
+
+      noise.chain(filter, warmGain, reverb);
+      nodes.push(noise, filter, warmGain, flickerLfo, crackle, crackleLoop);
+      break;
+    }
+
+    // ── WIND ─────────────────────────────────────────────────────────────────
+    // White noise + high-pass → slow sweeping band-pass LFO (gusts)
+    case "wind": {
+      const noise = new Tone.Noise("white").start();
+      const hpFilter = new Tone.Filter({ frequency: 200, type: "highpass" });
+      const bpFilter = new Tone.Filter({ frequency: 800, type: "bandpass", Q: 1.2 });
+
+      // Gust LFO sweeps the bandpass centre frequency
+      const gustLfo = new Tone.LFO({ frequency: 0.07, min: 300, max: 1800 }).start();
+      gustLfo.connect(bpFilter.frequency);
+
+      // Volume swell (gusts)
+      const gustVolLfo = new Tone.LFO({ frequency: 0.1, min: 0.15, max: 0.8 }).start();
+      const windGain = new Tone.Gain(0.5);
+      gustVolLfo.connect(windGain.gain);
+
+      noise.chain(hpFilter, bpFilter, windGain, reverb);
+      nodes.push(noise, hpFilter, bpFilter, gustLfo, gustVolLfo, windGain);
+      break;
+    }
+
+    // ── WHITE NOISE ──────────────────────────────────────────────────────────
+    // Pure pink noise — clean, steady, scientifically proven for focus
+    case "clouds": {
+      const noise = new Tone.Noise("pink").start();
+      const filter = new Tone.Filter({ frequency: 2000, type: "lowpass" });
+      const gain = new Tone.Gain(0.55);
+      noise.chain(filter, gain, masterGain);
+      nodes.push(noise, filter, gain);
+      break;
+    }
+
+    // ── FOCUS TONE (Binaural 40 Hz) ──────────────────────────────────────────
+    // 200 Hz left ear, 240 Hz right ear → 40 Hz gamma binaural beat for focus
+    case "binaural": {
+      const merge = new Tone.Merge().connect(reverb);
+
+      // Left: 200 Hz, Right: 240 Hz → brain hears 40 Hz gamma beat
+      const leftOsc = new Tone.Oscillator({ frequency: 200, type: "sine", volume: -22 }).start();
+      const rightOsc = new Tone.Oscillator({ frequency: 240, type: "sine", volume: -22 }).start();
+
+      leftOsc.connect(merge, 0, 0);
+      rightOsc.connect(merge, 0, 1);
+
+      // Gentle carrier tone for awareness
+      const carrier = new Tone.Oscillator({ frequency: 80, type: "sine", volume: -32 }).start();
+      carrier.connect(masterGain);
+
+      nodes.push(merge, leftOsc, rightOsc, carrier);
+      break;
+    }
+
+    // ── LO-FI HUM ────────────────────────────────────────────────────────────
+    // 110 Hz warm bass + 3rd harmonic + soft tape-hiss + slight overdrive
+    case "lofi": {
+      // Warm bass hum
+      const osc1 = new Tone.Oscillator({ frequency: 110, type: "triangle", volume: -20 }).start();
+      // 3rd harmonic warmth
+      const osc2 = new Tone.Oscillator({ frequency: 330, type: "sine", volume: -32 }).start();
+
+      // Tape hiss
+      const hiss = new Tone.Noise("white").start();
+      const hissFilter = new Tone.Filter({ frequency: 6000, type: "highpass" });
+      const hissGain = new Tone.Gain(0.04);
+
+      // Soft saturation/warmth via Chebyshev waveshaper
+      const distortion = new Tone.Chebyshev(2);
+
+      osc1.chain(distortion, reverb);
+      osc2.connect(reverb);
+      hiss.chain(hissFilter, hissGain, masterGain);
+
+      nodes.push(osc1, osc2, distortion, hiss, hissFilter, hissGain);
+      break;
+    }
+
+    default:
+      break;
+  }
+
+  return {
+    stop: () => {
+      nodes.forEach((n) => {
+        try {
+          if ("stop" in n && typeof (n as Tone.Noise).stop === "function") {
+            (n as Tone.Noise).stop();
+          }
+          if ("dispose" in n) n.dispose();
+        } catch (_) {
+          // already disposed
+        }
+      });
+    },
+    setVolume: (v: number) => {
+      try {
+        masterGain.gain.rampTo(v, 0.1);
+      } catch (_) { /* disposed */ }
+    },
+  };
+}
+
+// ─── Sound definitions ────────────────────────────────────────────────────────
+
+const SOUNDS: SoundDef[] = [
+  { id: "rain",     label: "Rain",        icon: Droplets, color: "from-blue-500/20 to-cyan-500/20",     description: "Gentle rainfall with intensity swells" },
+  { id: "forest",   label: "Forest",      icon: TreePine, color: "from-green-500/20 to-emerald-500/20", description: "Wind through leaves + bird chirps" },
+  { id: "ocean",    label: "Ocean",       icon: Waves,    color: "from-teal-500/20 to-blue-400/20",     description: "Rolling waves with deep rumble" },
+  { id: "fire",     label: "Fireplace",   icon: Flame,    color: "from-orange-500/20 to-red-500/20",    description: "Warm crackles and flicker" },
+  { id: "wind",     label: "Wind",        icon: Wind,     color: "from-slate-400/20 to-blue-300/20",    description: "Gusting breeze sweeping past" },
+  { id: "clouds",   label: "Pink Noise",  icon: Cloud,    color: "from-gray-300/20 to-slate-400/20",    description: "Pure pink noise for focus" },
+  { id: "binaural", label: "Focus Tone",  icon: Brain,    color: "from-purple-500/20 to-violet-500/20", description: "40 Hz gamma binaural beats" },
+  { id: "lofi",     label: "Lo-Fi Hum",   icon: Music2,   color: "from-pink-500/20 to-rose-400/20",     description: "Warm tape hum & harmonics" },
 ];
 
 // ─── Timer config ─────────────────────────────────────────────────────────────
 
 const TIMER_PRESETS: Record<TimerMode, { label: string; icon: React.ElementType; seconds: number; color: string }> = {
-  focus:       { label: "Focus",       icon: Brain,   seconds: 25 * 60, color: "text-primary" },
-  short_break: { label: "Short Break", icon: Coffee,  seconds: 5 * 60,  color: "text-green-400" },
-  long_break:  { label: "Long Break",  icon: Timer,   seconds: 15 * 60, color: "text-blue-400" },
+  focus:       { label: "Focus",       icon: Brain,  seconds: 25 * 60, color: "text-primary" },
+  short_break: { label: "Short Break", icon: Coffee, seconds: 5 * 60,  color: "text-green-400" },
+  long_break:  { label: "Long Break",  icon: Timer,  seconds: 15 * 60, color: "text-blue-400" },
 };
 
 // ─── Scene backgrounds ────────────────────────────────────────────────────────
 
 const SCENES = [
-  { id: "cosmos",  label: "Cosmos",    gradient: "from-[#0d0221] via-[#150b35] to-[#0a1628]", accent: "#7c3aed" },
-  { id: "forest",  label: "Forest",    gradient: "from-[#0a1a0f] via-[#0d2a15] to-[#051209]", accent: "#22c55e" },
-  { id: "ocean",   label: "Ocean",     gradient: "from-[#020f1a] via-[#041e36] to-[#02111f]", accent: "#0ea5e9" },
-  { id: "sunset",  label: "Sunset",    gradient: "from-[#1a0a00] via-[#2d1000] to-[#0f0500]", accent: "#f97316" },
+  { id: "cosmos",  label: "Cosmos",  gradient: "from-[#0d0221] via-[#150b35] to-[#0a1628]", accent: "#7c3aed" },
+  { id: "forest",  label: "Forest",  gradient: "from-[#0a1a0f] via-[#0d2a15] to-[#051209]", accent: "#22c55e" },
+  { id: "ocean",   label: "Ocean",   gradient: "from-[#020f1a] via-[#041e36] to-[#02111f]", accent: "#0ea5e9" },
+  { id: "sunset",  label: "Sunset",  gradient: "from-[#1a0a00] via-[#2d1000] to-[#0f0500]", accent: "#f97316" },
 ];
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -204,10 +337,11 @@ const FocusRoom = () => {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Audio
-  const engineRef = useRef<AmbientSoundEngine | null>(null);
+  const soundNodesRef = useRef<Map<string, SoundNode>>(new Map());
   const [activeSounds, setActiveSounds] = useState<Set<string>>(new Set());
+  const [loadingSounds, setLoadingSounds] = useState<Set<string>>(new Set());
   const [volumes, setVolumes] = useState<Record<string, number>>(
-    Object.fromEntries(SOUNDS.map((s) => [s.id, 0.5]))
+    Object.fromEntries(SOUNDS.map((s) => [s.id, 0.6]))
   );
   const [masterMuted, setMasterMuted] = useState(false);
 
@@ -219,11 +353,11 @@ const FocusRoom = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // ── Engine init ──
+  // ── Cleanup on unmount ──
   useEffect(() => {
-    engineRef.current = new AmbientSoundEngine();
     return () => {
-      engineRef.current?.stopAll();
+      soundNodesRef.current.forEach((node) => node.stop());
+      soundNodesRef.current.clear();
     };
   }, []);
 
@@ -270,41 +404,62 @@ const FocusRoom = () => {
   const progress = 1 - timeLeft / TIMER_PRESETS[mode].seconds;
 
   // ── Sound controls ──
-  const toggleSound = useCallback((sound: Sound) => {
-    const engine = engineRef.current;
-    if (!engine) return;
+  const toggleSound = useCallback(async (sound: SoundDef) => {
+    const existingNode = soundNodesRef.current.get(sound.id);
 
-    setActiveSounds((prev) => {
-      const next = new Set(prev);
-      if (next.has(sound.id)) {
-        engine.stop(sound.id);
+    if (existingNode) {
+      // Stop it
+      existingNode.stop();
+      soundNodesRef.current.delete(sound.id);
+      setActiveSounds((prev) => {
+        const next = new Set(prev);
         next.delete(sound.id);
-      } else {
-        engine.play(sound.id, sound.freq, sound.type, masterMuted ? 0 : volumes[sound.id]);
-        next.add(sound.id);
+        return next;
+      });
+    } else {
+      // Start it — show loading indicator while Tone.js builds the graph
+      setLoadingSounds((prev) => new Set(prev).add(sound.id));
+      try {
+        const vol = masterMuted ? 0 : volumes[sound.id];
+        const node = await buildSound(sound.id, vol);
+        soundNodesRef.current.set(sound.id, node);
+        setActiveSounds((prev) => new Set(prev).add(sound.id));
+      } catch (err) {
+        console.error("Failed to build sound:", err);
+        toast({ title: "Audio error", description: "Could not start this sound.", variant: "destructive" });
+      } finally {
+        setLoadingSounds((prev) => {
+          const next = new Set(prev);
+          next.delete(sound.id);
+          return next;
+        });
       }
-      return next;
-    });
-  }, [masterMuted, volumes]);
+    }
+  }, [masterMuted, volumes, toast]);
 
   const handleVolumeChange = useCallback((soundId: string, val: number[]) => {
     const v = val[0];
     setVolumes((prev) => ({ ...prev, [soundId]: v }));
-    if (activeSounds.has(soundId) && !masterMuted) {
-      engineRef.current?.setVolume(soundId, v);
+    const node = soundNodesRef.current.get(soundId);
+    if (node && !masterMuted) {
+      node.setVolume(v);
     }
-  }, [activeSounds, masterMuted]);
+  }, [masterMuted]);
 
   const toggleMaster = () => {
     setMasterMuted((m) => {
       const next = !m;
-      if (engineRef.current) {
-        for (const id of activeSounds) {
-          engineRef.current.setVolume(id, next ? 0 : volumes[id]);
-        }
-      }
+      soundNodesRef.current.forEach((node, id) => {
+        node.setVolume(next ? 0 : volumes[id]);
+      });
       return next;
     });
+  };
+
+  const stopAll = () => {
+    soundNodesRef.current.forEach((node) => node.stop());
+    soundNodesRef.current.clear();
+    setActiveSounds(new Set());
   };
 
   // ── Tasks ──
@@ -350,7 +505,7 @@ const FocusRoom = () => {
           scene.gradient
         )}
       >
-        {/* Animated stars/particles overlay */}
+        {/* Animated particles */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           {Array.from({ length: 60 }).map((_, i) => (
             <div
@@ -372,7 +527,7 @@ const FocusRoom = () => {
           {/* ── Left Panel ── */}
           <div className="flex-1 flex flex-col gap-5">
 
-            {/* Header row */}
+            {/* Header */}
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-2xl font-bold text-white flex items-center gap-2">
@@ -445,14 +600,7 @@ const FocusRoom = () => {
               {/* Circular progress */}
               <div className="relative w-52 h-52 flex items-center justify-center">
                 <svg className="absolute inset-0 -rotate-90" viewBox="0 0 200 200">
-                  {/* Track */}
-                  <circle
-                    cx="100" cy="100" r="90"
-                    fill="none"
-                    stroke="rgba(255,255,255,0.08)"
-                    strokeWidth="8"
-                  />
-                  {/* Progress arc */}
+                  <circle cx="100" cy="100" r="90" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="8" />
                   <circle
                     cx="100" cy="100" r="90"
                     fill="none"
@@ -527,7 +675,7 @@ const FocusRoom = () => {
                 </button>
               </div>
 
-              <div className="space-y-2 max-h-48 overflow-y-auto scrollbar-thin">
+              <div className="space-y-2 max-h-48 overflow-y-auto">
                 {tasks.length === 0 && (
                   <p className="text-white/20 text-xs text-center py-4">No goals yet — add one above</p>
                 )}
@@ -566,9 +714,7 @@ const FocusRoom = () => {
                 <Music2 className="w-4 h-4" style={{ color: scene.accent }} />
                 Ambient Soundscape
                 {activeSounds.size > 0 && (
-                  <span className="ml-auto text-xs text-white/40">
-                    {activeSounds.size} active
-                  </span>
+                  <span className="ml-auto text-xs text-white/40">{activeSounds.size} active</span>
                 )}
               </h3>
 
@@ -576,24 +722,29 @@ const FocusRoom = () => {
                 {SOUNDS.map((sound) => {
                   const Icon = sound.icon;
                   const isActive = activeSounds.has(sound.id);
+                  const isLoading = loadingSounds.has(sound.id);
                   return (
                     <div key={sound.id} className="flex flex-col gap-2">
                       <button
                         onClick={() => toggleSound(sound)}
+                        disabled={isLoading}
                         className={cn(
                           "flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border transition-all",
                           isActive
                             ? `bg-gradient-to-br ${sound.color} border-white/20 shadow-lg`
-                            : "bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/15"
+                            : "bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/15",
+                          isLoading && "opacity-60 cursor-wait"
                         )}
+                        title={sound.description}
                       >
-                        <Icon
-                          className={cn(
-                            "w-6 h-6 transition-colors",
-                            isActive ? "text-white" : "text-white/40"
-                          )}
-                          style={isActive ? { filter: `drop-shadow(0 0 6px ${scene.accent})` } : {}}
-                        />
+                        {isLoading ? (
+                          <div className="w-6 h-6 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                        ) : (
+                          <Icon
+                            className={cn("w-6 h-6 transition-colors", isActive ? "text-white" : "text-white/40")}
+                            style={isActive ? { filter: `drop-shadow(0 0 6px ${scene.accent})` } : {}}
+                          />
+                        )}
                         <span className={cn("text-xs font-medium", isActive ? "text-white" : "text-white/40")}>
                           {sound.label}
                         </span>
@@ -634,10 +785,7 @@ const FocusRoom = () => {
 
               {activeSounds.size > 0 && (
                 <button
-                  onClick={() => {
-                    engineRef.current?.stopAll();
-                    setActiveSounds(new Set());
-                  }}
+                  onClick={stopAll}
                   className="mt-4 w-full py-2 rounded-xl border border-white/10 text-white/40 hover:text-white/70 hover:border-white/20 text-xs transition-colors"
                 >
                   Stop all sounds
@@ -655,7 +803,8 @@ const FocusRoom = () => {
                   "Work for 25 min, then take a 5 min break",
                   "After 4 sessions, take a 15 min break",
                   "Mix Rain + Forest for deep focus",
-                  "Binaural tones boost concentration",
+                  "Focus Tone uses 40 Hz gamma binaural beats",
+                  "Fireplace + Lo-Fi Hum = virtual coffee shop",
                 ].map((tip, i) => (
                   <li key={i} className="flex items-start gap-2 text-xs text-white/40">
                     <span style={{ color: scene.accent }} className="text-[10px] mt-0.5">●</span>
