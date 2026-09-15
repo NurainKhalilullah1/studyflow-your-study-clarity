@@ -46,7 +46,9 @@ interface Task {
 }
 
 // ─── Tone.js Audio Engine ─────────────────────────────────────────────────────
-// Lazy-imported so it doesn't block the initial render.
+// Static type-only import gives TypeScript the Tone namespace for annotations.
+// The actual module is lazy-loaded at runtime via dynamic import().
+import type * as Tone from "tone";
 
 type ToneModule = typeof import("tone");
 
@@ -274,8 +276,8 @@ async function buildSound(id: string, volume: number): Promise<SoundNode> {
     stop: () => {
       nodes.forEach((n) => {
         try {
-          if ("stop" in n && typeof (n as Tone.Noise).stop === "function") {
-            (n as Tone.Noise).stop();
+          if ("stop" in n && typeof (n as Tone.ToneAudioNode & { stop?: () => void }).stop === "function") {
+            (n as Tone.ToneAudioNode & { stop: () => void }).stop();
           }
           if ("dispose" in n) n.dispose();
         } catch (_) {
