@@ -1,0 +1,8 @@
+{
+  "tool": "vitest",
+  "additionalTools": ["@testing-library/react", "@testing-library/user-event", "@testing-library/jest-dom"],
+  "e2eTool": null,
+  "testDir": "src",
+  "filePattern": "**/*.test.ts?(x)",
+  "packageManager": "npm"
+}
