@@ -27,13 +27,25 @@ const TIMEFRAME_OPTIONS: { label: string; value: Timeframe }[] = [
   { label: 'All time', value: 'all' },
 ];
 
+interface TooltipPayloadEntry {
+  name: string;
+  value: number | string;
+  color?: string;
+}
+
+interface ChartTooltipProps {
+  active?: boolean;
+  payload?: TooltipPayloadEntry[];
+  label?: string;
+}
+
 // Custom tooltip for the composed chart
-const ChartTooltip = ({ active, payload, label }: any) => {
+const ChartTooltip = ({ active, payload, label }: ChartTooltipProps) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-xl border border-border bg-card/95 backdrop-blur-sm px-3 py-2 shadow-lg text-xs">
       <p className="font-semibold text-foreground mb-1">{label}</p>
-      {payload.map((entry: any) => (
+      {payload.map((entry) => (
         <div key={entry.name} className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full" style={{ background: entry.color }} />
           <span className="text-muted-foreground">{entry.name}:</span>

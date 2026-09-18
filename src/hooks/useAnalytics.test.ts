@@ -337,7 +337,7 @@ describe('exportStudyData (AC-1)', () => {
     URL.createObjectURL = createObjectURL;
     URL.revokeObjectURL = revokeObjectURL;
     vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
-      const el = document.createElementNS('http://www.w3.org/1999/xhtml', tag) as any;
+      const el = document.createElementNS('http://www.w3.org/1999/xhtml', tag) as HTMLElement & { click?: () => void };
       if (tag === 'a') el.click = clickSpy;
       return el;
     });
