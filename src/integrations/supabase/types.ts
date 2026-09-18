@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.1"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -80,6 +80,42 @@ export type Database = {
           title?: string
           type?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      auth_verification_codes: {
+        Row: {
+          attempts: number
+          code: string
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          max_attempts: number
+          purpose: string
+          used: boolean
+        }
+        Insert: {
+          attempts?: number
+          code: string
+          created_at?: string
+          email: string
+          expires_at: string
+          id?: string
+          max_attempts?: number
+          purpose?: string
+          used?: boolean
+        }
+        Update: {
+          attempts?: number
+          code?: string
+          created_at?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          max_attempts?: number
+          purpose?: string
+          used?: boolean
         }
         Relationships: []
       }
@@ -309,13 +345,54 @@ export type Database = {
         }
         Relationships: []
       }
+      email_templates: {
+        Row: {
+          body: string
+          cta_text: string
+          cta_url: string
+          header_bg: string
+          header_subtitle: string
+          header_title: string
+          id: string
+          label: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          cta_text?: string
+          cta_url?: string
+          header_bg: string
+          header_subtitle?: string
+          header_title: string
+          id: string
+          label: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          cta_text?: string
+          cta_url?: string
+          header_bg?: string
+          header_subtitle?: string
+          header_title?: string
+          id?: string
+          label?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       flashcards: {
         Row: {
           back: string
           created_at: string
           deck_name: string | null
+          ease_factor: number | null
           front: string
           id: string
+          interval_days: number | null
+          last_reviewed_at: string | null
+          next_review_at: string | null
+          repetitions: number | null
           session_id: string | null
           user_id: string
         }
@@ -323,8 +400,13 @@ export type Database = {
           back: string
           created_at?: string
           deck_name?: string | null
+          ease_factor?: number | null
           front: string
           id?: string
+          interval_days?: number | null
+          last_reviewed_at?: string | null
+          next_review_at?: string | null
+          repetitions?: number | null
           session_id?: string | null
           user_id: string
         }
@@ -332,8 +414,13 @@ export type Database = {
           back?: string
           created_at?: string
           deck_name?: string | null
+          ease_factor?: number | null
           front?: string
           id?: string
+          interval_days?: number | null
+          last_reviewed_at?: string | null
+          next_review_at?: string | null
+          repetitions?: number | null
           session_id?: string | null
           user_id?: string
         }
@@ -436,8 +523,10 @@ export type Database = {
           course_of_study: string | null
           created_at: string
           email: string | null
+          email_opt_out: boolean
           full_name: string | null
           id: string
+          last_verified_at: string | null
           level: string | null
           storage_limit_bytes: number
           storage_used_bytes: number
@@ -450,8 +539,10 @@ export type Database = {
           course_of_study?: string | null
           created_at?: string
           email?: string | null
+          email_opt_out?: boolean
           full_name?: string | null
           id: string
+          last_verified_at?: string | null
           level?: string | null
           storage_limit_bytes?: number
           storage_used_bytes?: number
@@ -464,8 +555,10 @@ export type Database = {
           course_of_study?: string | null
           created_at?: string
           email?: string | null
+          email_opt_out?: boolean
           full_name?: string | null
           id?: string
+          last_verified_at?: string | null
           level?: string | null
           storage_limit_bytes?: number
           storage_used_bytes?: number
@@ -475,10 +568,38 @@ export type Database = {
         }
         Relationships: []
       }
+      push_tokens: {
+        Row: {
+          created_at: string | null
+          id: string
+          last_seen: string | null
+          platform: string
+          token: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          last_seen?: string | null
+          platform: string
+          token: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          last_seen?: string | null
+          platform?: string
+          token?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       quiz_questions: {
         Row: {
           correct_answer: string
           created_at: string
+          explanation: string | null
           id: string
           is_flagged: boolean
           options: Json
@@ -490,6 +611,7 @@ export type Database = {
         Insert: {
           correct_answer: string
           created_at?: string
+          explanation?: string | null
           id?: string
           is_flagged?: boolean
           options: Json
@@ -501,6 +623,7 @@ export type Database = {
         Update: {
           correct_answer?: string
           created_at?: string
+          explanation?: string | null
           id?: string
           is_flagged?: boolean
           options?: Json
@@ -522,6 +645,7 @@ export type Database = {
       quiz_sessions: {
         Row: {
           completed_at: string | null
+          course_id: string | null
           created_at: string
           document_content: string | null
           document_name: string | null
@@ -536,6 +660,7 @@ export type Database = {
         }
         Insert: {
           completed_at?: string | null
+          course_id?: string | null
           created_at?: string
           document_content?: string | null
           document_name?: string | null
@@ -550,6 +675,7 @@ export type Database = {
         }
         Update: {
           completed_at?: string | null
+          course_id?: string | null
           created_at?: string
           document_content?: string | null
           document_name?: string | null
@@ -562,10 +688,19 @@ export type Database = {
           total_questions?: number | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "quiz_sessions_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       study_events: {
         Row: {
+          course_id: string | null
           created_at: string
           event_type: string
           id: string
@@ -573,6 +708,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          course_id?: string | null
           created_at?: string
           event_type: string
           id?: string
@@ -580,13 +716,22 @@ export type Database = {
           user_id: string
         }
         Update: {
+          course_id?: string | null
           created_at?: string
           event_type?: string
           id?: string
           metadata?: Json | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "study_events_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       study_group_members: {
         Row: {
@@ -898,6 +1043,7 @@ export type Database = {
         Returns: boolean
       }
       process_league_week: { Args: never; Returns: undefined }
+      trigger_study_tip_notification: { Args: never; Returns: undefined }
       upsert_user_group:
         | {
             Args: { p_course_of_study: string; p_university: string }
@@ -929,12 +1075,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -958,11 +1104,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -983,11 +1129,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1008,11 +1154,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1025,11 +1171,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1045,3 +1191,4 @@ export const Constants = {
     },
   },
 } as const
+

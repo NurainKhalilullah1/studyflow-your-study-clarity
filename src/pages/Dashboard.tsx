@@ -15,6 +15,7 @@ import { XPProgressCard } from "@/components/dashboard/XPProgressCard";
 import { AchievementsCard } from "@/components/dashboard/AchievementsCard";
 import { useStudyEvents } from "@/hooks/useStudyStats";
 import { useDueFlashcards } from "@/hooks/useFlashcards";
+import { AnalyticsOverviewCard } from "@/components/dashboard/AnalyticsOverviewCard";
 const getGreeting = () => {
   const hour = new Date().getHours();
   if (hour < 12) return "Good morning";
@@ -98,6 +99,9 @@ const Dashboard = () => {
           </h1>
           <p className="text-muted-foreground mt-1">Here is your academic overview.</p>
         </motion.div>
+
+        {/* Analytics overview widget */}
+        <AnalyticsOverviewCard />
 
         {dueCount > 0 && (
           <motion.div

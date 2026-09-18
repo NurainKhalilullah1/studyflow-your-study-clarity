@@ -33,6 +33,7 @@ import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
 import Admin from "./pages/Admin";
 import Upgrade from "./pages/Upgrade";
+import Analytics from "./pages/Analytics";
 import NotFound from "./pages/NotFound";
 import DownloadPage from "./pages/Download";
 import SharedQuiz from "@/pages/SharedQuiz";
@@ -214,6 +215,14 @@ const App = () => {
                           element={
                             <ProtectedRoute>
                               <FocusRoom />
+                            </ProtectedRoute>
+                          }
+                        />
+                        <Route
+                          path="/analytics"
+                          element={
+                            <ProtectedRoute>
+                              <Analytics />
                             </ProtectedRoute>
                           }
                         />
