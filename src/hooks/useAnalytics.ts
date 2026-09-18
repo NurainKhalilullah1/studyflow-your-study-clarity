@@ -218,7 +218,7 @@ export function useAnalytics(userId: string | undefined, timeframe: Timeframe): 
       if (!userId) return [];
       const { data, error } = await supabase
         .from('flashcards')
-        .select('id, deck_name, next_review, repetitions, ease_factor, interval')
+        .select('id, deck_name, next_review_at, repetitions, ease_factor, interval_days, last_reviewed_at')
         .eq('user_id', userId);
       if (error) throw error;
       return data as Flashcard[];
