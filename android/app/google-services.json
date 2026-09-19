@@ -16,6 +16,10 @@
         {
           "client_id": "1048055478088-bp7mkum60r06b1mc84i5i9jm27en6iau.apps.googleusercontent.com",
           "client_type": 1
+        },
+        {
+          "client_id": "1048055478088-8rc0hh9t2ihbpdrmmcppe4hak2qrufn2.apps.googleusercontent.com",
+          "client_type": 3
         }
       ],
       "api_key": [
