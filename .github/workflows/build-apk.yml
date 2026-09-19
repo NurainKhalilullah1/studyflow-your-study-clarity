@@ -9,10 +9,14 @@ jobs:
   build-apk:
     name: Build Debug APK
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Java 21
         uses: actions/setup-java@v4
@@ -48,31 +52,13 @@ jobs:
       - name: Sync Capacitor Android
         run: npx cap sync android
 
-      - name: Prepare debug keystore (restore from secret or generate fresh)
-        env:
-          ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+      - name: Setup permanent repository debug keystore
         run: |
           mkdir -p ~/.android
-          KEYSTORE_VALID=false
-
-          # If secret is provided, try to decode and validate it
-          if [ -n "$ANDROID_DEBUG_KEYSTORE_BASE64" ]; then
-            echo "Attempting to restore keystore from secret..."
-            printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > ~/.android/debug.keystore 2>/dev/null || true
-            if [ -s ~/.android/debug.keystore ] && keytool -list -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey >/dev/null 2>&1; then
-              echo ">>> Restored valid debug keystore from ANDROID_DEBUG_KEYSTORE_BASE64 secret."
-              KEYSTORE_VALID=true
-            else
-              echo ">>> Secret exists but is invalid or corrupted. Generating a fresh keystore instead."
-              rm -f ~/.android/debug.keystore
-            fi
-          fi
-
-          # If no secret or secret was invalid, generate a fresh keystore
-          if [ "$KEYSTORE_VALID" = "false" ]; then
-            echo ">>> Generating fresh debug keystore..."
+          if [ ! -f android/app/debug.keystore ]; then
+            echo ">>> Generating permanent debug keystore for repository..."
             keytool -genkey -v \
-              -keystore ~/.android/debug.keystore \
+              -keystore android/app/debug.keystore \
               -storepass android \
               -alias androiddebugkey \
               -keypass android \
@@ -80,14 +66,18 @@ jobs:
               -keysize 2048 \
               -validity 10000 \
               -dname "CN=Android Debug,O=Android,C=US"
-            echo ">>> Fresh debug keystore generated successfully."
-          fi
 
-          # Sanity check: ensure file is non-empty
-          if [ ! -s ~/.android/debug.keystore ]; then
-            echo "ERROR: debug.keystore is missing or 0 bytes!"
-            exit 1
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add android/app/debug.keystore
+            git commit -m "chore: commit permanent debug keystore [skip ci]"
+            git push origin main || echo "Git push skipped"
+            echo ">>> Permanent debug keystore generated and committed to repo."
+          else
+            echo ">>> Permanent repository debug keystore found."
           fi
+          # Also sync to default ~/.android location
+          cp -f android/app/debug.keystore ~/.android/debug.keystore
 
       - name: Grant execute permission for gradlew
         run: chmod +x ./android/gradlew
@@ -96,34 +86,18 @@ jobs:
         working-directory: ./android
         run: ./gradlew assembleDebug --stacktrace
 
-      - name: Print debug keystore SHA-1 (register this in Google Cloud Console)
+      - name: Print permanent debug keystore SHA-1 (register this in Google Cloud Console)
         run: |
           echo "========================================================"
-          echo "  DEBUG KEYSTORE CERTIFICATE FINGERPRINTS"
+          echo "  PERMANENT DEBUG KEYSTORE FINGERPRINTS"
+          echo "  (Register this SHA-1 in Google Cloud & Firebase ONCE)"
           echo "========================================================"
           keytool -list -v \
-            -keystore ~/.android/debug.keystore \
+            -keystore android/app/debug.keystore \
             -alias androiddebugkey \
             -storepass android \
             -keypass android
           echo "========================================================"
-
-      - name: Export debug keystore as base64 (save as ANDROID_DEBUG_KEYSTORE_BASE64 secret)
-        run: |
-          echo "========================================================"
-          echo "  SAVE THIS AS GITHUB SECRET: ANDROID_DEBUG_KEYSTORE_BASE64"
-          echo "  (Settings → Secrets and variables → Actions → New repository secret)"
-          echo "========================================================"
-          base64 -w 0 ~/.android/debug.keystore
-          echo ""
-          echo "========================================================"
-
-      - name: Upload debug keystore artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-keystore
-          path: /home/runner/.android/debug.keystore
-          retention-days: 14
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
