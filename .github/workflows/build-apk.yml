@@ -53,15 +53,18 @@ jobs:
           ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
         run: |
           mkdir -p ~/.android
+          GENERATED=false
           if [ -n "$ANDROID_DEBUG_KEYSTORE_BASE64" ]; then
-            # Strip all whitespace (newlines, spaces) before decoding —
-            # copy-pasting from CI logs often adds extra line breaks.
             printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" \
               | tr -d '[:space:]' \
-              | base64 --decode > ~/.android/debug.keystore
-            echo "Restored stable debug keystore from secret."
+              | base64 --decode --ignore-garbage > ~/.android/debug.keystore 2>/dev/null \
+              && echo "Restored stable debug keystore from secret." \
+              || GENERATED=true
           else
-            echo "No saved keystore found — generating a fresh debug keystore now."
+            GENERATED=true
+          fi
+          if [ "$GENERATED" = "true" ]; then
+            echo "Generating a fresh debug keystore (secret missing or invalid)."
             keytool -genkey -v \
               -keystore ~/.android/debug.keystore \
               -storepass android \
