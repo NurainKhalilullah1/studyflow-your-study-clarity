@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mail, Lock, ArrowRight, Eye, EyeOff, ArrowLeft, ShieldCheck, RefreshCw } from "lucide-react";
+import { Mail, Lock, ArrowRight, Eye, EyeOff, ArrowLeft, ShieldCheck, RefreshCw, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -59,6 +59,13 @@ const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // ── Password recovery state (after user taps reset email link) ────────────
+  const [showPasswordRecovery, setShowPasswordRecovery] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [recoverySuccess, setRecoverySuccess] = useState(false);
 
   // ── OTP state ───────────────────────────────────────────────────────────────
   const [showVerification, setShowVerification] = useState(false);
@@ -122,12 +129,68 @@ const Auth = () => {
     }
   }, [location.state, user, isSessionVerified, showVerification]);
 
+  // ── Listen for PASSWORD_RECOVERY event (from email link deep link) ─────────
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setShowPasswordRecovery(true);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
   // ── Resend countdown timer ────────────────────────────────────────────────
   useEffect(() => {
     if (resendCountdown <= 0) return;
     const timer = setTimeout(() => setResendCountdown((c) => c - 1), 1000);
     return () => clearTimeout(timer);
   }, [resendCountdown]);
+
+  // ── Handle new-password form submit ───────────────────────────────────────
+  const handleNewPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const newPwdSchema = z.object({
+      newPassword: z
+        .string()
+        .min(6, { message: "Password must be at least 6 characters" })
+        .max(72, { message: "Password must be less than 72 characters" }),
+      confirmNewPassword: z.string(),
+    }).refine((d) => d.newPassword === d.confirmNewPassword, {
+      message: "Passwords don't match",
+      path: ["confirmNewPassword"],
+    });
+
+    const result = newPwdSchema.safeParse({ newPassword, confirmNewPassword });
+    if (!result.success) {
+      const fieldErrors: Record<string, string> = {};
+      result.error.errors.forEach((err) => {
+        const field = err.path[0] as string;
+        if (!fieldErrors[field]) fieldErrors[field] = err.message;
+      });
+      setErrors(fieldErrors);
+      return;
+    }
+
+    setIsLoading(true);
+    clearErrors();
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setIsLoading(false);
+
+    if (error) {
+      toast({
+        title: "Password update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      setRecoverySuccess(true);
+      toast({
+        title: "Password updated!",
+        description: "You can now sign in with your new password.",
+      });
+      setTimeout(() => navigate("/dashboard", { replace: true }), 2000);
+    }
+  };
 
   const clearErrors = () => setErrors({});
 
@@ -528,9 +591,127 @@ const Auth = () => {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
+  // VIEW: SET NEW PASSWORD (after arriving via password-reset email link)
+  // ══════════════════════════════════════════════════════════════════════════
+  if (showPasswordRecovery) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-8 bg-background relative">
+        <div className="absolute top-4 right-4">
+          <ThemeToggle />
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5 }}
+          className="w-full max-w-md"
+        >
+          <StudyFlowLogo size="lg" className="mb-8" />
+
+          {recoverySuccess ? (
+            <div className="text-center space-y-4">
+              <CheckCircle className="w-16 h-16 text-green-500 mx-auto" />
+              <h1 className="text-2xl font-bold text-foreground">Password updated!</h1>
+              <p className="text-muted-foreground">Taking you to your dashboard…</p>
+            </div>
+          ) : (
+            <>
+              <div className="mb-8">
+                <h1 className="text-3xl font-bold text-foreground mb-2">Set new password</h1>
+                <p className="text-muted-foreground">
+                  Choose a strong password for your account.
+                </p>
+              </div>
+
+              <form onSubmit={handleNewPasswordSubmit} className="space-y-5">
+                {/* New password */}
+                <div className="space-y-2">
+                  <Label htmlFor="new-password" className="text-foreground">New Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                    <Input
+                      id="new-password"
+                      type={showNewPassword ? "text" : "password"}
+                      placeholder="At least 6 characters"
+                      value={newPassword}
+                      onChange={(e) => {
+                        setNewPassword(e.target.value);
+                        if (errors.newPassword) clearErrors();
+                      }}
+                      className={`pl-10 pr-10 h-12 bg-muted/50 border-border focus:border-primary ${
+                        errors.newPassword ? "border-destructive" : ""
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                  {errors.newPassword && (
+                    <p className="text-sm text-destructive">{errors.newPassword}</p>
+                  )}
+                </div>
+
+                {/* Confirm new password */}
+                <div className="space-y-2">
+                  <Label htmlFor="confirm-new-password" className="text-foreground">Confirm New Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                    <Input
+                      id="confirm-new-password"
+                      type={showNewPassword ? "text" : "password"}
+                      placeholder="Repeat your new password"
+                      value={confirmNewPassword}
+                      onChange={(e) => {
+                        setConfirmNewPassword(e.target.value);
+                        if (errors.confirmNewPassword) clearErrors();
+                      }}
+                      className={`pl-10 h-12 bg-muted/50 border-border focus:border-primary ${
+                        errors.confirmNewPassword ? "border-destructive" : ""
+                      }`}
+                    />
+                  </div>
+                  {errors.confirmNewPassword && (
+                    <p className="text-sm text-destructive">{errors.confirmNewPassword}</p>
+                  )}
+                </div>
+
+                <Button
+                  type="submit"
+                  variant="hero"
+                  size="lg"
+                  className="w-full group"
+                  disabled={isLoading}
+                  id="set-new-password-btn"
+                >
+                  {isLoading ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                      Updating password…
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      Update password
+                      <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                    </span>
+                  )}
+                </Button>
+              </form>
+            </>
+          )}
+        </motion.div>
+      </div>
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   // VIEW: FORGOT PASSWORD
   // ══════════════════════════════════════════════════════════════════════════
   if (showForgotPassword) {
+
     return (
       <div className="min-h-screen flex items-center justify-center p-8 bg-background relative">
         <div className="absolute top-4 right-4">

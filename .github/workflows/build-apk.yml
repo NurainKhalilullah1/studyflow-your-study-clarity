@@ -48,6 +48,13 @@ jobs:
       - name: Sync Capacitor Android
         run: npx cap sync android
 
+      - name: Restore stable debug keystore (if secret exists)
+        if: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 != '' }}
+        run: |
+          mkdir -p ~/.android
+          echo "${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}" | base64 --decode > ~/.android/debug.keystore
+          echo "Using saved stable debug keystore."
+
       - name: Grant execute permission for gradlew
         run: chmod +x ./android/gradlew
 
@@ -55,9 +62,33 @@ jobs:
         working-directory: ./android
         run: ./gradlew assembleDebug --stacktrace
 
+      - name: Print debug keystore SHA-1 (register this in Google Cloud Console)
+        run: |
+          echo "========================================================"
+          echo "  DEBUG KEYSTORE SHA-1 (add to Google Cloud Console)"
+          echo "========================================================"
+          keytool -list -v \
+            -keystore ~/.android/debug.keystore \
+            -alias androiddebugkey \
+            -storepass android \
+            -keypass android \
+            2>/dev/null | grep -E "SHA1:|SHA-1:"
+          echo "========================================================"
+
+      - name: Export debug keystore as base64 (save as ANDROID_DEBUG_KEYSTORE_BASE64 secret)
+        run: |
+          echo "========================================================"
+          echo "  SAVE THIS AS GITHUB SECRET: ANDROID_DEBUG_KEYSTORE_BASE64"
+          echo "  (Settings → Secrets → Actions → New repository secret)"
+          echo "========================================================"
+          base64 -w 0 ~/.android/debug.keystore
+          echo ""
+          echo "========================================================"
+
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: studyflow-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
+

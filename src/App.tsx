@@ -62,14 +62,24 @@ const App = () => {
       setShowSplash(false); // Disable web splash for mobile
       setHasSeenSplash(true);
       
-      // Listen for deep links (like Supabase OAuth redirects)
+      // Listen for deep links (Supabase OAuth and password-recovery redirects)
       CapacitorApp.addListener('appUrlOpen', (event) => {
-        const urlOptions = new URL(event.url);
-        // Supabase OAuth returns an access_token in the URL hash
-        if (urlOptions.hash && urlOptions.hash.includes('access_token')) {
-          window.location.hash = urlOptions.hash;
-          // Close the in-app browser once we have the token
+        const parsedUrl = new URL(event.url);
+
+        // OAuth flow: Supabase returns access_token in the URL hash
+        if (parsedUrl.hash && parsedUrl.hash.includes('access_token')) {
+          window.location.hash = parsedUrl.hash;
           Browser.close();
+          return;
+        }
+
+        // Password-recovery flow: Supabase redirects with type=recovery in the
+        // query string. Navigate to /auth so onAuthStateChange can fire
+        // PASSWORD_RECOVERY and let the user set a new password.
+        const type = parsedUrl.searchParams.get('type');
+        if (type === 'recovery') {
+          // Preserve the full query so Supabase can exchange the token
+          window.location.href = `/auth${parsedUrl.search}${parsedUrl.hash}`;
         }
       });
     }
