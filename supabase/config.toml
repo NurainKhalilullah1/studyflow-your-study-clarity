@@ -5,3 +5,9 @@ verify_jwt = false
 
 [functions.send-study-tip]
 verify_jwt = true
+
+[functions.send-email]
+verify_jwt = false
+
+[functions.trigger-email]
+verify_jwt = false
