@@ -61,7 +61,13 @@ const DashboardLayout = ({ children, hideMobileHeader, hideNav }: DashboardLayou
         <SidebarInset className="flex flex-col min-w-0 min-h-0">
           {/* Mobile Header */}
           {!hideMobileHeader && (
-            <header className="flex items-center justify-between h-14 px-4 border-b border-border bg-card/80 backdrop-blur-md md:hidden shrink-0 sticky top-0 z-10">
+            <header 
+              className="flex items-center justify-between px-4 border-b border-border bg-card/95 backdrop-blur-md md:hidden shrink-0 sticky top-0 z-30 transition-colors"
+              style={{
+                paddingTop: "env(safe-area-inset-top, 0px)",
+                minHeight: "calc(3.5rem + env(safe-area-inset-top, 0px))",
+              }}
+            >
               <div className="flex items-center gap-2">
                 <button onClick={handleSignOut} className="p-2 -ml-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
                   <LogOut className="w-5 h-5" />
@@ -88,7 +94,10 @@ const DashboardLayout = ({ children, hideMobileHeader, hideNav }: DashboardLayou
 
           {/* Main Content */}
           {hideMobileHeader || hideNav ? (
-            <main className="flex-1 overflow-hidden flex flex-col min-h-0">
+            <main 
+              className="flex-1 overflow-hidden flex flex-col min-h-0"
+              style={{ paddingTop: hideMobileHeader ? "env(safe-area-inset-top, 0px)" : undefined }}
+            >
               {children}
             </main>
           ) : (

@@ -4,13 +4,14 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { ThemeProvider } from "next-themes";
+import { ThemeProvider, useTheme } from "next-themes";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { PomodoroProvider } from "@/contexts/PomodoroContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { SplashScreen } from "@/components/SplashScreen";
 import { MaintenancePage, MAINTENANCE_MODE } from "@/components/MaintenanceBanner";
 import { Capacitor } from "@capacitor/core";
+import { StatusBar, Style } from "@capacitor/status-bar";
 import { App as CapacitorApp } from "@capacitor/app";
 import { Browser } from "@capacitor/browser";
 import Index from "./pages/Index";
@@ -60,9 +61,6 @@ const App = () => {
 
     // Mobile App specific logic
     if (Capacitor.isNativePlatform()) {
-      setShowSplash(false); // Disable web splash for mobile
-      setHasSeenSplash(true);
-      
       // Listen for deep links (Supabase OAuth and password-recovery redirects)
       CapacitorApp.addListener('appUrlOpen', async (event) => {
         try {
@@ -132,6 +130,7 @@ const App = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+        <StatusBarController />
         <AuthProvider>
           <PomodoroProvider>
             <TooltipProvider>
@@ -294,6 +293,44 @@ const NotificationGate = () => {
   const { user, isSessionVerified } = useAuth();
   if (!user || !isSessionVerified) return null;
   return <NotificationPrompt userId={user.id} />;
+};
+
+// Controls native status bar overlay and theme-aware colors
+const StatusBarController = () => {
+  const { resolvedTheme } = useTheme();
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const configureStatusBar = async () => {
+      try {
+        // Disallow webview from scrolling underneath the native phone status bar
+        await StatusBar.setOverlaysWebView({ overlay: false });
+
+        const isDark = resolvedTheme === "dark";
+        // Dark theme -> light icons on dark status bar (#090D16)
+        // Light theme -> dark icons on light status bar (#FFFFFF)
+        await StatusBar.setStyle({
+          style: isDark ? Style.Dark : Style.Light,
+        });
+        await StatusBar.setBackgroundColor({
+          color: isDark ? "#090d16" : "#ffffff",
+        });
+      } catch (err) {
+        console.warn("StatusBar setup warning:", err);
+      }
+    };
+
+    configureStatusBar();
+  }, [resolvedTheme]);
+
+  return (
+    <div
+      aria-hidden="true"
+      className="fixed top-0 left-0 right-0 z-50 pointer-events-none bg-background/95 backdrop-blur-md md:hidden transition-colors"
+      style={{ height: "env(safe-area-inset-top, 0px)" }}
+    />
+  );
 };
 
 export default App;

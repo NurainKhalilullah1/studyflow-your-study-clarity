@@ -144,11 +144,9 @@
 
   #root {
     overflow-x: hidden;
-    /* Capacitor specific safe area padding */
-    padding-top: env(safe-area-inset-top);
+    /* Capacitor specific safe area padding — top is handled by headers/scrims so it doesn't scroll away */
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
-    /* padding-bottom typically handled by nav bars, but good measure */
     padding-bottom: env(safe-area-inset-bottom);
   }
 
