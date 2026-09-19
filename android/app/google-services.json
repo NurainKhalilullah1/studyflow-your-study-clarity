@@ -7,12 +7,17 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:845420711121:android:10ca28f3a2b68ce7e3c9f0",
+        "mobilesdk_app_id": "1:845420711121:android:74642711b8d08cfee3c9f0",
         "android_client_info": {
           "package_name": "com.lumina.studyflow"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "1048055478088-bp7mkum60r06b1mc84i5i9jm27en6iau.apps.googleusercontent.com",
+          "client_type": 1
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCeiCwJg4o3xzkUpi8GobH5Kn7kgtbetBA"
