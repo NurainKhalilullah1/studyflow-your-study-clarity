@@ -150,6 +150,7 @@ const Admin = () => {
   const [nlFooter, setNlFooter] = useState("");
   const [nlPreview, setNlPreview] = useState(false);
   const [nlSending, setNlSending] = useState(false);
+  const [nlTestSending, setNlTestSending] = useState(false);
 
   // Email templates — load from DB, fall back to defaults
   const [templates, setTemplates] = useState(DEFAULT_TEMPLATES);
@@ -311,6 +312,51 @@ const Admin = () => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
       setNlSending(false);
+    }
+  };
+
+  const handleSendTestNewsletter = async () => {
+    if (!nlSubject.trim() || !nlBody.trim()) {
+      toast({ title: "Missing fields", description: "Subject and message body are required.", variant: "destructive" });
+      return;
+    }
+    if (!user?.email) {
+      toast({ title: "No email found", description: "Your current account has no email address to receive a test.", variant: "destructive" });
+      return;
+    }
+    setNlTestSending(true);
+    try {
+      const name = user.user_metadata?.full_name?.split(" ")[0] || "Admin";
+      const sampleBody = `<p style="white-space:pre-wrap;">${nlBody.trim().replace(/{{name}}/g, name)}</p>`;
+      const html = buildEmail(
+        `[TEST] ${nlSubject.trim()}`,
+        "linear-gradient(135deg,#6c47ff 0%,#a78bfa 100%)",
+        "StudyFlow Announcement",
+        "",
+        sampleBody,
+        "Open StudyFlow",
+        "https://www.nexgenu.cyou/dashboard"
+      );
+      const { data, error } = await supabase.functions.invoke("send-email", {
+        body: {
+          type: "single",
+          to: user.email,
+          data: {
+            subject: `[TEST] ${nlSubject.trim()}`,
+            html,
+          },
+        },
+      });
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+      toast({
+        title: "Test email sent! ✉️",
+        description: `Delivered test broadcast to ${user.email}. Check your inbox!`,
+      });
+    } catch (err: any) {
+      toast({ title: "Error sending test email", description: err.message, variant: "destructive" });
+    } finally {
+      setNlTestSending(false);
     }
   };
 
@@ -483,25 +529,39 @@ const Admin = () => {
                     srcDoc={buildEmail(
                       nlSubject || "(no subject)",
                       "linear-gradient(135deg,#6c47ff 0%,#a78bfa 100%)",
-                      "StudyFlow",
+                      "StudyFlow Announcement",
                       "",
                       `<p style="white-space:pre-wrap;">${nlBody.replace(/{{name}}/g, "Alex Johnson")}</p>`,
+                      "Open StudyFlow",
+                      "https://www.nexgenu.cyou/dashboard"
                     )}
                   />
                 </div>
               )}
 
-              <div className="flex items-center gap-3 pt-2">
+              <div className="flex flex-wrap items-center gap-3 pt-2">
                 <Button
                   id="send-broadcast-btn"
                   onClick={handleSendNewsletter}
-                  disabled={nlSending || !nlSubject.trim() || !nlBody.trim()}
+                  disabled={nlSending || nlTestSending || !nlSubject.trim() || !nlBody.trim()}
                   className="gradient-primary text-primary-foreground"
                 >
                   {nlSending ? (
                     <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending…</>
                   ) : (
                     <><Send className="mr-2 h-4 w-4" /> Send to All Users</>
+                  )}
+                </Button>
+                <Button
+                  id="send-test-btn"
+                  variant="outline"
+                  onClick={handleSendTestNewsletter}
+                  disabled={nlSending || nlTestSending || !nlSubject.trim() || !nlBody.trim()}
+                >
+                  {nlTestSending ? (
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending Test…</>
+                  ) : (
+                    <><Mail className="mr-2 h-4 w-4" /> Send Test to Me</>
                   )}
                 </Button>
                 <p className="text-xs text-muted-foreground">

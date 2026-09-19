@@ -101,14 +101,18 @@ const App = () => {
           }
 
           if (isRecovery) {
-            window.location.href = `/auth?type=recovery${hash}`;
+            sessionStorage.setItem('studyflow_pending_recovery', 'true');
+            window.history.pushState({}, '', `/auth?type=recovery${hash}`);
+            window.dispatchEvent(new PopStateEvent('popstate'));
+            window.dispatchEvent(new HashChangeEvent('hashchange'));
             try { await Browser.close(); } catch (_) {}
             return;
           }
 
           // Normal OAuth sign-in flow (e.g. Google OAuth redirect)
           if (accessToken || searchParams.get('code')) {
-            window.location.href = `/auth?google_callback=true${hash}`;
+            window.history.pushState({}, '', `/auth?google_callback=true${hash}`);
+            window.dispatchEvent(new PopStateEvent('popstate'));
             try { await Browser.close(); } catch (_) {}
             return;
           }
@@ -287,8 +291,9 @@ const App = () => {
 
 // Inner component: needs to live inside AuthProvider to access useAuth()
 const NotificationGate = () => {
-  const { user } = useAuth();
-  return <NotificationPrompt userId={user?.id} />;
+  const { user, isSessionVerified } = useAuth();
+  if (!user || !isSessionVerified) return null;
+  return <NotificationPrompt userId={user.id} />;
 };
 
 export default App;

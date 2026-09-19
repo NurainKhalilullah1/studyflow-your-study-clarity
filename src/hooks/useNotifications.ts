@@ -68,6 +68,11 @@ export function useNotifications(userId: string | undefined) {
       // Clear any stale listeners from a previous run
       await PushNotifications.removeAllListeners();
 
+      // Listen for FCM registration error safely
+      await PushNotifications.addListener('registrationError', (err) => {
+        console.warn('Push notification registration error (non-fatal):', err);
+      });
+
       // Listen for FCM token — wrapped in try/catch to prevent WebView crash
       await PushNotifications.addListener('registration', async (tokenData) => {
         try {
@@ -138,13 +143,19 @@ export function useNotifications(userId: string | undefined) {
     if (!userId) return;
 
     if (isNative) {
-      PushNotifications.checkPermissions().then((result) => {
-        if (result.receive === 'granted') {
-          setPermissionStatus('granted');
-          // Silently re-register to ensure token is saved (handles crash-on-first-grant)
-          setupAndroidListeners(userId);
-        }
-      }).catch(() => {});
+      try {
+        PushNotifications.checkPermissions().then((result) => {
+          if (result.receive === 'granted') {
+            setPermissionStatus('granted');
+            // Silently re-register to ensure token is saved (handles crash-on-first-grant)
+            setupAndroidListeners(userId);
+          }
+        }).catch((err) => {
+          console.warn('Check permissions error (non-fatal):', err);
+        });
+      } catch (err) {
+        console.warn('PushNotifications checkPermissions error:', err);
+      }
     } else {
       if ('Notification' in window) {
         const p = Notification.permission;

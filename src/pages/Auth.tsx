@@ -13,7 +13,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth, checkIsVerified } from "@/contexts/AuthContext";
 import { z } from "zod";
 import PasswordStrengthIndicator from "@/components/PasswordStrengthIndicator";
 import { StudyFlowLogo } from "@/components/StudyFlowLogo";
@@ -81,7 +81,42 @@ const Auth = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const { signIn, signUp, signInWithGoogle, resetPassword, user, loading, isSessionVerified, sendVerificationCode, verifyCode } = useAuth();
+  const { signIn, signUp, signInWithGoogle, resetPassword, signOut, user, loading, isSessionVerified, sendVerificationCode, verifyCode } = useAuth();
+
+  // ── Trigger OTP dispatch & switch to verification screen ─────────────────
+  const triggerVerification = useCallback(async (
+    targetEmail: string,
+    purpose: "signin" | "signup" | "google_signin",
+    name?: string
+  ) => {
+    setVerificationEmail(targetEmail);
+    setVerificationPurpose(purpose);
+    setOtpValue("");
+    setOtpError("");
+    setIsSendingCode(true);
+    setShowVerification(true);
+
+    const result = await sendVerificationCode(targetEmail, purpose, name);
+
+    setIsSendingCode(false);
+
+    if (!result.ok && !result.cooldown) {
+      toast({
+        title: "Couldn't send verification code",
+        description: result.error || "Please try again.",
+        variant: "destructive",
+      });
+    } else {
+      setCodeSent(true);
+      setResendCountdown(RESEND_COOLDOWN);
+      if (!result.cooldown) {
+        toast({
+          title: "Verification code sent!",
+          description: `Check your email: ${targetEmail}`,
+        });
+      }
+    }
+  }, [sendVerificationCode, toast]);
 
   // ── Redirect if fully verified ──────────────────────────────────────────────
   useEffect(() => {
@@ -117,33 +152,53 @@ const Auth = () => {
       // Clean up the URL
       window.history.replaceState({}, "", "/auth");
     }
-  }, [user, isSessionVerified, showVerification]);
+  }, [user, isSessionVerified, showVerification, triggerVerification]);
 
-  // ── Handle pendingVerification from ProtectedRoute ────────────────────────
+  // ── Auto-trigger OTP verification for authenticated unverified sessions ───
   useEffect(() => {
     const state = location.state as any;
-    if (state?.pendingVerification && user && !isSessionVerified && !showVerification) {
+    const isPending = state?.pendingVerification;
+    const isPendingRecovery =
+      sessionStorage.getItem("studyflow_pending_recovery") === "true" ||
+      window.location.href.includes("type=recovery") ||
+      window.location.hash.includes("type=recovery") ||
+      window.location.search.includes("type=recovery");
+
+    if (
+      !loading &&
+      user &&
+      !isSessionVerified &&
+      !showVerification &&
+      !showPasswordRecovery &&
+      !showForgotPassword &&
+      !isPendingRecovery
+    ) {
       const userEmail = user.email || "";
       const userName = user.user_metadata?.full_name || user.user_metadata?.name || "";
-      triggerVerification(userEmail, "signin", userName);
+      const purpose = isPending ? "signin" : (user.app_metadata?.provider === "google" ? "google_signin" : "signin");
+      triggerVerification(userEmail, purpose, userName);
     }
-  }, [location.state, user, isSessionVerified, showVerification]);
+  }, [location.state, loading, user, isSessionVerified, showVerification, showPasswordRecovery, showForgotPassword, triggerVerification]);
 
-  // ── Detect Password Recovery mode from URL (hash or search) or Auth event ──
+  // ── Detect Password Recovery mode from URL (hash, search, location) or Auth event ──
   useEffect(() => {
     const checkRecovery = async () => {
-      const hash = window.location.hash || "";
-      const search = window.location.search || "";
+      const hash = window.location.hash || location.hash || "";
+      const search = window.location.search || location.search || "";
+      const href = window.location.href || "";
       const hashParams = new URLSearchParams(hash.replace(/^#/, ""));
       const searchParams = new URLSearchParams(search.replace(/^\?/, ""));
 
       const isRecovery =
+        sessionStorage.getItem("studyflow_pending_recovery") === "true" ||
         hashParams.get("type") === "recovery" ||
         searchParams.get("type") === "recovery" ||
         hash.includes("type=recovery") ||
-        search.includes("type=recovery");
+        search.includes("type=recovery") ||
+        href.includes("type=recovery");
 
       if (isRecovery) {
+        sessionStorage.removeItem("studyflow_pending_recovery");
         setShowPasswordRecovery(true);
         const accessToken = hashParams.get("access_token") || searchParams.get("access_token");
         const refreshToken = hashParams.get("refresh_token") || searchParams.get("refresh_token");
@@ -165,12 +220,14 @@ const Auth = () => {
     });
 
     window.addEventListener("hashchange", checkRecovery);
+    window.addEventListener("popstate", checkRecovery);
 
     return () => {
       subscription.unsubscribe();
       window.removeEventListener("hashchange", checkRecovery);
+      window.removeEventListener("popstate", checkRecovery);
     };
-  }, []);
+  }, [location]);
 
   // ── Resend countdown timer ────────────────────────────────────────────────
   useEffect(() => {
@@ -227,41 +284,6 @@ const Auth = () => {
 
   const clearErrors = () => setErrors({});
 
-  // ── Trigger OTP dispatch & switch to verification screen ─────────────────
-  const triggerVerification = useCallback(async (
-    targetEmail: string,
-    purpose: "signin" | "signup" | "google_signin",
-    name?: string
-  ) => {
-    setVerificationEmail(targetEmail);
-    setVerificationPurpose(purpose);
-    setOtpValue("");
-    setOtpError("");
-    setIsSendingCode(true);
-    setShowVerification(true);
-
-    const result = await sendVerificationCode(targetEmail, purpose, name);
-
-    setIsSendingCode(false);
-
-    if (!result.ok && !result.cooldown) {
-      toast({
-        title: "Couldn't send verification code",
-        description: result.error || "Please try again.",
-        variant: "destructive",
-      });
-    } else {
-      setCodeSent(true);
-      setResendCountdown(RESEND_COOLDOWN);
-      if (!result.cooldown) {
-        toast({
-          title: "Verification code sent!",
-          description: `Check your email: ${targetEmail}`,
-        });
-      }
-    }
-  }, [sendVerificationCode, toast]);
-
   // ── Handle resend ─────────────────────────────────────────────────────────
   const handleResend = async () => {
     if (resendCountdown > 0) return;
@@ -281,7 +303,7 @@ const Auth = () => {
 
     if (result.ok) {
       toast({
-        title: "✓ Verified!",
+        title: "✅ Verified!",
         description: "Welcome to StudyFlow.",
       });
       const from = (location.state as any)?.from || "/dashboard";
@@ -394,16 +416,43 @@ const Auth = () => {
   };
 
   const handleGoogleSignIn = async () => {
-    const { error } = await signInWithGoogle();
-    if (error) {
+    setIsLoading(true);
+    clearErrors();
+    try {
+      const { error } = await signInWithGoogle();
+      if (error) {
+        toast({
+          title: "❌ Google sign in failed",
+          description: error.message,
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      // For native Google Sign-In, the session is established in Supabase.
+      // Check if already verified on this device:
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (currentUser?.email) {
+        if (checkIsVerified(currentUser.id)) {
+          const from = (location.state as any)?.from || "/dashboard";
+          navigate(from, { replace: true });
+          return;
+        }
+
+        const userName = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || "";
+        await triggerVerification(currentUser.email, "google_signin", userName);
+      }
+    } catch (err: any) {
+      console.error("Google sign in error:", err);
       toast({
-        title: "Google sign in failed",
-        description: error.message,
+        title: "❌ Google sign in failed",
+        description: err.message || "An unexpected error occurred",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
-    // On web: redirect happens; on native: onAuthStateChange fires →
-    // google_callback check or pendingVerification will pick it up
   };
 
   const purposeLabel = {
@@ -479,21 +528,22 @@ const Auth = () => {
               <span className="text-xl font-bold text-foreground">StudyFlow</span>
             </a>
 
-            {/* Back button — only for email/password flows, not Google callbacks */}
-            {verificationPurpose !== "google_signin" && (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowVerification(false);
-                  setOtpValue("");
-                  setOtpError("");
-                }}
-                className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                Back
-              </button>
-            )}
+            {/* Back button */}
+            <button
+              type="button"
+              onClick={async () => {
+                setShowVerification(false);
+                setOtpValue("");
+                setOtpError("");
+                if (verificationPurpose === "google_signin") {
+                  await signOut();
+                }
+              }}
+              className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              {verificationPurpose === "google_signin" ? "Sign in with different account" : "Back"}
+            </button>
 
             {/* Header */}
             <div className="mb-8">

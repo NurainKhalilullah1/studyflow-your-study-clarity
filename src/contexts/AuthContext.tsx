@@ -177,8 +177,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         const currentUserId = currentSession.user.id;
 
-        // Verify inactivity expiry
-        if (isSessionExpiredDueToInactivity(currentUserId)) {
+        // If the user just signed in, immediately record current activity to prevent stale inactivity checks!
+        if (event === "SIGNED_IN") {
+          recordActivity(currentUserId, true);
+        } else if (isSessionExpiredDueToInactivity(currentUserId)) {
           await handleInactivityExpiry(currentUserId);
           setLoading(false);
           return;
@@ -188,7 +190,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser(currentSession.user);
         setIsSessionVerified(checkIsVerified(currentUserId));
 
-        if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+        if (event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
           recordActivity(currentUserId, true);
         }
 
@@ -347,15 +349,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       try {
         console.log("Attempting native Google Sign-In...");
         const googleUser = await GoogleAuth.signIn();
+        const idToken = googleUser?.authentication?.idToken || (googleUser as any)?.idToken;
         
-        if (googleUser?.authentication?.idToken) {
+        if (idToken) {
           const { error } = await supabase.auth.signInWithIdToken({
             provider: 'google',
-            token: googleUser.authentication.idToken,
+            token: idToken,
           });
           
           if (!error) return { error: null };
           console.warn("Native signInWithIdToken failed, falling back to web OAuth:", error);
+        } else {
+          console.warn("Native GoogleAuth returned no idToken, falling back to web OAuth");
         }
       } catch (nativeError: any) {
         console.warn("Native Google Sign-In failed, falling back to web OAuth:", nativeError);
