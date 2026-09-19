@@ -42,6 +42,7 @@ import { AppUpdateGuard } from "@/components/AppUpdateGuard";
 import InitialRedirect from "@/components/InitialRedirect";
 import { NotificationPrompt } from "@/components/NotificationPrompt";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 const queryClient = new QueryClient();
 
@@ -50,7 +51,7 @@ const App = () => {
   const [hasSeenSplash, setHasSeenSplash] = useState(false);
 
   useEffect(() => {
-    // Check if user has already seen splash in this session
+    // Check if splash has already been shown in this tab/session
     const seen = sessionStorage.getItem("splashSeen");
     if (seen) {
       setShowSplash(false);
@@ -63,23 +64,56 @@ const App = () => {
       setHasSeenSplash(true);
       
       // Listen for deep links (Supabase OAuth and password-recovery redirects)
-      CapacitorApp.addListener('appUrlOpen', (event) => {
-        const parsedUrl = new URL(event.url);
+      CapacitorApp.addListener('appUrlOpen', async (event) => {
+        try {
+          const urlStr = event.url;
+          const hashIdx = urlStr.indexOf('#');
+          const searchIdx = urlStr.indexOf('?');
+          
+          let hash = '';
+          let search = '';
+          if (hashIdx !== -1) {
+            hash = urlStr.substring(hashIdx);
+          }
+          if (searchIdx !== -1) {
+            search = hashIdx !== -1 && hashIdx > searchIdx 
+              ? urlStr.substring(searchIdx, hashIdx) 
+              : urlStr.substring(searchIdx);
+          }
 
-        // OAuth flow: Supabase returns access_token in the URL hash
-        if (parsedUrl.hash && parsedUrl.hash.includes('access_token')) {
-          window.location.hash = parsedUrl.hash;
-          Browser.close();
-          return;
-        }
+          const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
+          const searchParams = new URLSearchParams(search.replace(/^\?/, ''));
 
-        // Password-recovery flow: Supabase redirects with type=recovery in the
-        // query string. Navigate to /auth so onAuthStateChange can fire
-        // PASSWORD_RECOVERY and let the user set a new password.
-        const type = parsedUrl.searchParams.get('type');
-        if (type === 'recovery') {
-          // Preserve the full query so Supabase can exchange the token
-          window.location.href = `/auth${parsedUrl.search}${parsedUrl.hash}`;
+          const isRecovery =
+            hashParams.get('type') === 'recovery' ||
+            searchParams.get('type') === 'recovery' ||
+            urlStr.includes('type=recovery');
+
+          const accessToken = hashParams.get('access_token') || searchParams.get('access_token');
+          const refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token');
+
+          // If tokens are in URL, set the Supabase session explicitly
+          if (accessToken && refreshToken) {
+            await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+          }
+
+          if (isRecovery) {
+            window.location.href = `/auth?type=recovery${hash}`;
+            try { await Browser.close(); } catch (_) {}
+            return;
+          }
+
+          // Normal OAuth sign-in flow (e.g. Google OAuth redirect)
+          if (accessToken || searchParams.get('code')) {
+            window.location.href = `/auth?google_callback=true${hash}`;
+            try { await Browser.close(); } catch (_) {}
+            return;
+          }
+        } catch (e) {
+          console.error("Deep link handler error:", e);
         }
       });
     }

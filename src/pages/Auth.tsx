@@ -85,11 +85,11 @@ const Auth = () => {
 
   // ── Redirect if fully verified ──────────────────────────────────────────────
   useEffect(() => {
-    if (!loading && user && isSessionVerified) {
+    if (!loading && user && isSessionVerified && !showPasswordRecovery) {
       const from = (location.state as any)?.from || "/dashboard";
       navigate(from, { replace: true });
     }
-  }, [user, loading, isSessionVerified, navigate, location.state]);
+  }, [user, loading, isSessionVerified, navigate, location.state, showPasswordRecovery]);
 
   // ── Notify user if previous session expired due to inactivity ─────────────
   useEffect(() => {
@@ -129,14 +129,47 @@ const Auth = () => {
     }
   }, [location.state, user, isSessionVerified, showVerification]);
 
-  // ── Listen for PASSWORD_RECOVERY event (from email link deep link) ─────────
+  // ── Detect Password Recovery mode from URL (hash or search) or Auth event ──
   useEffect(() => {
+    const checkRecovery = async () => {
+      const hash = window.location.hash || "";
+      const search = window.location.search || "";
+      const hashParams = new URLSearchParams(hash.replace(/^#/, ""));
+      const searchParams = new URLSearchParams(search.replace(/^\?/, ""));
+
+      const isRecovery =
+        hashParams.get("type") === "recovery" ||
+        searchParams.get("type") === "recovery" ||
+        hash.includes("type=recovery") ||
+        search.includes("type=recovery");
+
+      if (isRecovery) {
+        setShowPasswordRecovery(true);
+        const accessToken = hashParams.get("access_token") || searchParams.get("access_token");
+        const refreshToken = hashParams.get("refresh_token") || searchParams.get("refresh_token");
+        if (accessToken && refreshToken) {
+          await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+        }
+      }
+    };
+
+    checkRecovery();
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
+      if (event === "PASSWORD_RECOVERY") {
         setShowPasswordRecovery(true);
       }
     });
-    return () => subscription.unsubscribe();
+
+    window.addEventListener("hashchange", checkRecovery);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener("hashchange", checkRecovery);
+    };
   }, []);
 
   // ── Resend countdown timer ────────────────────────────────────────────────

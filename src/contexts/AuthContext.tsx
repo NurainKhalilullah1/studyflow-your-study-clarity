@@ -118,7 +118,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // Initialize Native Google Auth
     if (Capacitor.isNativePlatform()) {
       try {
-        GoogleAuth.initialize();
+        GoogleAuth.initialize({
+          clientId: "1048055478088-8rc0hh9t2ihbpdrmmcppe4hak2qrufn2.apps.googleusercontent.com",
+          scopes: ["profile", "email"],
+          grantOfflineAccess: true,
+        });
       } catch (e) {
         console.warn("GoogleAuth initialization failed (non-critical if retryable):", e);
       }
@@ -341,23 +345,42 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     
     if (isNative) {
       try {
-        // 1. Get ID Token from Native Google Sign-In
+        console.log("Attempting native Google Sign-In...");
         const googleUser = await GoogleAuth.signIn();
         
-        if (!googleUser.authentication?.idToken) {
-          throw new Error("No ID token returned from Google");
+        if (googleUser?.authentication?.idToken) {
+          const { error } = await supabase.auth.signInWithIdToken({
+            provider: 'google',
+            token: googleUser.authentication.idToken,
+          });
+          
+          if (!error) return { error: null };
+          console.warn("Native signInWithIdToken failed, falling back to web OAuth:", error);
         }
+      } catch (nativeError: any) {
+        console.warn("Native Google Sign-In failed, falling back to web OAuth:", nativeError);
+      }
 
-        // 2. Pass ID Token to Supabase
-        const { error } = await supabase.auth.signInWithIdToken({
+      // Fallback: Web OAuth via Capacitor Browser
+      try {
+        const { data, error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
-          token: googleUser.authentication.idToken,
+          options: {
+            redirectTo: 'com.lumina.studyflow://auth',
+            skipBrowserRedirect: true,
+          },
         });
-        
-        return { error };
-      } catch (error: any) {
-        console.error("Native Google Sign-In Error:", error);
-        return { error: new Error(error.message || "Native Google Sign-In failed") };
+
+        if (error) return { error };
+
+        if (data?.url) {
+          await Browser.open({ url: data.url, windowName: '_self' });
+          return { error: null };
+        }
+        return { error: new Error("No redirect URL returned for Google Sign-In") };
+      } catch (fallbackError: any) {
+        console.error("Google OAuth fallback error:", fallbackError);
+        return { error: new Error(fallbackError.message || "Google Sign-In failed") };
       }
     } else {
       // Web fallback
