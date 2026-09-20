@@ -47,17 +47,28 @@ import { supabase } from "@/integrations/supabase/client";
 
 const queryClient = new QueryClient();
 
+// Module-level flag: true once the splash has been shown in this WebView lifecycle.
+// On native Android the WebView is created fresh on each cold launch so this always
+// starts as false, meaning the splash always plays on launch.
+let splashShownThisSession = false;
+
 const App = () => {
-  const [showSplash, setShowSplash] = useState(true);
-  const [hasSeenSplash, setHasSeenSplash] = useState(false);
+  // On native: always show on first render (module flag guards against in-app re-mounts)
+  // On web: respect sessionStorage so navigating tabs doesn't re-trigger the splash
+  const [showSplash, setShowSplash] = useState(() => {
+    if (Capacitor.isNativePlatform()) {
+      return !splashShownThisSession;
+    }
+    return !sessionStorage.getItem("splashSeen");
+  });
+  const [hasSeenSplash, setHasSeenSplash] = useState(() => {
+    if (Capacitor.isNativePlatform()) {
+      return splashShownThisSession;
+    }
+    return !!sessionStorage.getItem("splashSeen");
+  });
 
   useEffect(() => {
-    // Check if splash has already been shown in this tab/session
-    const seen = sessionStorage.getItem("splashSeen");
-    if (seen) {
-      setShowSplash(false);
-      setHasSeenSplash(true);
-    }
 
     // Mobile App specific logic
     if (Capacitor.isNativePlatform()) {
@@ -122,9 +133,12 @@ const App = () => {
   }, []);
 
   const handleSplashComplete = () => {
+    splashShownThisSession = true;
     setShowSplash(false);
     setHasSeenSplash(true);
-    sessionStorage.setItem("splashSeen", "true");
+    if (!Capacitor.isNativePlatform()) {
+      sessionStorage.setItem("splashSeen", "true");
+    }
   };
 
   return (
