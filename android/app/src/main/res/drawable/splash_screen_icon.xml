@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Splash screen adaptive icon for Android 12+.
+  windowSplashScreenAnimatedIcon requires an adaptive-icon XML, not a plain PNG.
+  Background is transparent so it blends into the purple splash background (#2C1C98).
+  Foreground is the StudyFlow white logo PNG.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/splashBackground" />
+    <foreground>
+        <inset
+            android:drawable="@drawable/splash_icon"
+            android:inset="15%" />
+    </foreground>
+</adaptive-icon>
