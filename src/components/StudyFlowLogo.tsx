@@ -1,5 +1,5 @@
 import studyflowPurple from "@/assets/logos/studyflow-purple.png";
-import studyflowWhite from "@/assets/logos/studyflow-white.png";
+import studyflowWhite from "@/assets/logos/studyflow-logo.png";
 import studyflowBlack from "@/assets/logos/studyflow-black.png";
 import { cn } from "@/lib/utils";
 
