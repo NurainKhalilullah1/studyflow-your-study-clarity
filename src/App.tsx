@@ -152,7 +152,6 @@ const App = () => {
             <TooltipProvider>
               <Toaster />
               <Sonner />
-              <NotificationGate />
 
               {/* ── Strict Maintenance Gate ────────────────────── */}
               {MAINTENANCE_MODE ? (
@@ -166,6 +165,7 @@ const App = () => {
 
                   <AppUpdateGuard>
                     <BrowserRouter>
+                      <NotificationGate />
                       <Routes>
                         <Route path="/" element={<InitialRedirect />} />
                         <Route path="/features" element={<Features />} />
