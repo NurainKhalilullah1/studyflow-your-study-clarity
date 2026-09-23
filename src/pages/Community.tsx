@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -9,7 +10,7 @@ import GroupInfo from "@/components/community/GroupInfo";
 import TrendingPosts from "@/components/community/TrendingPosts";
 import PullToRefresh from "@/components/ui/PullToRefresh";
 import { PostSkeleton } from "@/components/community/PostSkeleton";
-import { Loader2, Search, MessageCircle, GraduationCap, ArrowUpDown } from "lucide-react";
+import { Loader2, Search, MessageCircle, GraduationCap, ArrowUpDown, Users } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { StudyGroupsList } from "@/components/community/groups/StudyGroupsList";
 import type { CommunityPost } from "@/hooks/useCommunity";
 
 const categories = ["all", "question", "tip", "discussion", "achievement"] as const;
@@ -41,6 +43,14 @@ const categoryChipColors: Record<string, string> = {
 
 const Community = () => {
   useCommunityRealtime(); // Enable live syncing
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const tabParam = searchParams.get("tab");
+  const groupIdParam = searchParams.get("groupId");
+
+  const [activeTab, setActiveTab] = useState<string>(
+    tabParam === "study-groups" ? "study-groups" : "all"
+  );
   
   const { data: allPosts, isLoading: loadingAll, refetch: refetchAll } = usePosts();
   const { data: userGroup } = useUserGroup();
@@ -143,7 +153,7 @@ const Community = () => {
 
   return (
     <DashboardLayout>
-      <div className="p-4 lg:p-8 max-w-3xl mx-auto space-y-6">
+      <div className="p-4 lg:p-8 max-w-4xl mx-auto space-y-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -152,70 +162,99 @@ const Community = () => {
           <div>
             <h1 className="text-2xl lg:text-3xl font-bold text-foreground">Community</h1>
             <p className="text-muted-foreground text-sm mt-1">
-              Ask questions, share tips, and connect with fellow students.
+              Connect with fellow students, form peer study groups, and share resources.
             </p>
           </div>
-          <CreatePostDialog />
+          {activeTab !== "study-groups" && <CreatePostDialog />}
         </motion.div>
 
-        {/* Search Bar */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search posts..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+        <Tabs
+          value={activeTab}
+          onValueChange={(val) => {
+            setActiveTab(val);
+            if (val === "study-groups") {
+              setSearchParams({ tab: "study-groups" });
+            } else {
+              setSearchParams({});
+            }
+          }}
+          className="w-full space-y-6"
+        >
+          <TabsList className="w-full bg-muted/60 p-1 rounded-xl">
+            <TabsTrigger value="all" className="flex-1 text-xs sm:text-sm font-semibold">
+              All Posts
+            </TabsTrigger>
+            <TabsTrigger value="group" className="flex-1 text-xs sm:text-sm font-semibold">
+              University Cohort
+            </TabsTrigger>
+            <TabsTrigger value="study-groups" className="flex-1 text-xs sm:text-sm font-semibold gap-1.5">
+              <Users className="w-3.5 h-3.5" />
+              Study Groups
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Filter Chips + Sort */}
-        <div className="flex items-center gap-2 justify-between">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setCategory(cat)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium border capitalize whitespace-nowrap transition-colors ${
-                  category === cat
-                    ? categoryChipColors[cat]
-                    : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
-                }`}
-              >
-                {cat === "all" ? "All" : cat}
-              </button>
-            ))}
-          </div>
+          {/* Posts Tabs (All & University Cohort) */}
+          <TabsContent value="all" className="space-y-6 focus-visible:outline-none">
+            {/* Search Bar */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search posts..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="shrink-0 gap-1.5">
-                <ArrowUpDown className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{sortLabels[sort]}</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {(Object.keys(sortLabels) as SortOption[]).map((opt) => (
-                <DropdownMenuItem key={opt} onClick={() => setSort(opt)}>
-                  {sortLabels[opt]}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+            {/* Filter Chips + Sort */}
+            <div className="flex items-center gap-2 justify-between">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                {categories.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setCategory(cat)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium border capitalize whitespace-nowrap transition-colors ${
+                      category === cat
+                        ? categoryChipColors[cat]
+                        : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
+                    }`}
+                  >
+                    {cat === "all" ? "All" : cat}
+                  </button>
+                ))}
+              </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-6">
-          <Tabs defaultValue="all" className="w-full">
-            <TabsList className="w-full">
-              <TabsTrigger value="all" className="flex-1">All Posts</TabsTrigger>
-              <TabsTrigger value="group" className="flex-1">My Group</TabsTrigger>
-            </TabsList>
-            <TabsContent value="all">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="shrink-0 gap-1.5">
+                    <ArrowUpDown className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{sortLabels[sort]}</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {(Object.keys(sortLabels) as SortOption[]).map((opt) => (
+                    <DropdownMenuItem key={opt} onClick={() => setSort(opt)}>
+                      {sortLabels[opt]}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-6">
               <PullToRefresh onRefresh={async () => { await refetchAll(); }}>
                 {renderPosts(allPosts, loadingAll)}
               </PullToRefresh>
-            </TabsContent>
-            <TabsContent value="group">
+
+              <div className="hidden lg:block space-y-4">
+                <GroupInfo />
+                <TrendingPosts posts={allPosts} />
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="group" className="space-y-6 focus-visible:outline-none">
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-6">
               <PullToRefresh onRefresh={async () => { await refetchGroup(); }}>
                 {userGroup ? (
                   renderPosts(groupPosts, loadingGroup)
@@ -224,26 +263,32 @@ const Community = () => {
                     <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
                       <GraduationCap className="w-8 h-8 text-muted-foreground" />
                     </div>
-                    <h3 className="font-semibold text-foreground mb-1">Join a Study Group</h3>
+                    <h3 className="font-semibold text-foreground mb-1">University Cohort</h3>
                     <p className="text-sm text-muted-foreground max-w-xs">
                       Set your university and course in{" "}
                       <a href="/settings" className="text-primary underline">Settings</a>{" "}
-                      to see your group's posts.
+                      to connect with your university course cohort.
                     </p>
                   </div>
                 )}
               </PullToRefresh>
-            </TabsContent>
-          </Tabs>
 
-          <div className="hidden lg:block space-y-4">
-            <GroupInfo />
-            <TrendingPosts posts={allPosts} />
-          </div>
-        </div>
+              <div className="hidden lg:block space-y-4">
+                <GroupInfo />
+                <TrendingPosts posts={allPosts} />
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* Tab 3: Peer Study Groups */}
+          <TabsContent value="study-groups" className="space-y-6 focus-visible:outline-none">
+            <StudyGroupsList initialOpenGroupId={groupIdParam} />
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );
 };
 
 export default Community;
+

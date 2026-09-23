@@ -39,6 +39,8 @@ import NotFound from "./pages/NotFound";
 import DownloadPage from "./pages/Download";
 import SharedQuiz from "@/pages/SharedQuiz";
 import FocusRoom from "./pages/FocusRoom";
+import GroupJoin from "./pages/GroupJoin";
+import { useGroupNotifications } from "@/hooks/useGroupNotifications";
 import { AppUpdateGuard } from "@/components/AppUpdateGuard";
 import InitialRedirect from "@/components/InitialRedirect";
 import { NotificationPrompt } from "@/components/NotificationPrompt";
@@ -287,6 +289,7 @@ const App = () => {
                             </ProtectedRoute>
                           }
                         />
+                        <Route path="/groups/join/:code" element={<GroupJoin />} />
                         {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                         <Route path="*" element={<NotFound />} />
                       </Routes>
@@ -305,6 +308,7 @@ const App = () => {
 // Inner component: needs to live inside AuthProvider to access useAuth()
 const NotificationGate = () => {
   const { user, isSessionVerified } = useAuth();
+  useGroupNotifications();
   if (!user || !isSessionVerified) return null;
   return <NotificationPrompt userId={user.id} />;
 };

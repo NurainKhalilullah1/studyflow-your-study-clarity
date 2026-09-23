@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -434,6 +434,149 @@ export type Database = {
           },
         ]
       }
+      group_feed_posts: {
+        Row: {
+          author_id: string | null
+          caption: string | null
+          created_at: string
+          group_id: string
+          id: string
+          post_type: string
+          reference_id: string | null
+        }
+        Insert: {
+          author_id?: string | null
+          caption?: string | null
+          created_at?: string
+          group_id: string
+          id?: string
+          post_type: string
+          reference_id?: string | null
+        }
+        Update: {
+          author_id?: string | null
+          caption?: string | null
+          created_at?: string
+          group_id?: string
+          id?: string
+          post_type?: string
+          reference_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_feed_posts_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "study_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_members: {
+        Row: {
+          group_id: string
+          id: string
+          joined_at: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          group_id: string
+          id?: string
+          joined_at?: string
+          role?: string
+          user_id: string
+        }
+        Update: {
+          group_id?: string
+          id?: string
+          joined_at?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "study_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_session_participants: {
+        Row: {
+          completed: boolean
+          id: string
+          joined_at: string
+          session_id: string
+          user_id: string
+        }
+        Insert: {
+          completed?: boolean
+          id?: string
+          joined_at?: string
+          session_id: string
+          user_id: string
+        }
+        Update: {
+          completed?: boolean
+          id?: string
+          joined_at?: string
+          session_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_session_participants_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "group_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_sessions: {
+        Row: {
+          break_duration: number
+          completed_at: string | null
+          group_id: string
+          id: string
+          started_at: string
+          started_by: string | null
+          state: string
+          work_duration: number
+        }
+        Insert: {
+          break_duration?: number
+          completed_at?: string | null
+          group_id: string
+          id?: string
+          started_at?: string
+          started_by?: string | null
+          state?: string
+          work_duration?: number
+        }
+        Update: {
+          break_duration?: number
+          completed_at?: string | null
+          group_id?: string
+          id?: string
+          started_at?: string
+          started_by?: string | null
+          state?: string
+          work_duration?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_sessions_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "study_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       league_history: {
         Row: {
           created_at: string | null
@@ -764,28 +907,43 @@ export type Database = {
       }
       study_groups: {
         Row: {
-          course_of_study: string
+          course_of_study: string | null
           created_at: string
+          description: string | null
           id: string
+          invite_code: string | null
           level: string | null
+          max_members: number | null
           member_count: number
-          university: string
+          name: string | null
+          owner_id: string | null
+          university: string | null
         }
         Insert: {
-          course_of_study: string
+          course_of_study?: string | null
           created_at?: string
+          description?: string | null
           id?: string
+          invite_code?: string | null
           level?: string | null
+          max_members?: number | null
           member_count?: number
-          university: string
+          name?: string | null
+          owner_id?: string | null
+          university?: string | null
         }
         Update: {
-          course_of_study?: string
+          course_of_study?: string | null
           created_at?: string
+          description?: string | null
           id?: string
+          invite_code?: string | null
           level?: string | null
+          max_members?: number | null
           member_count?: number
-          university?: string
+          name?: string | null
+          owner_id?: string | null
+          university?: string | null
         }
         Relationships: []
       }
@@ -1014,6 +1172,7 @@ export type Database = {
     }
     Functions: {
       delete_own_account: { Args: never; Returns: undefined }
+      generate_invite_code: { Args: never; Returns: string }
       get_leaderboard: {
         Args: never
         Returns: {
@@ -1191,4 +1350,3 @@ export const Constants = {
     },
   },
 } as const
-
