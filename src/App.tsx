@@ -9,6 +9,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { PomodoroProvider } from "@/contexts/PomodoroContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { SplashScreen } from "@/components/SplashScreen";
+import { WebSplashScreen } from "@/components/WebSplashScreen";
 import { MaintenancePage, MAINTENANCE_MODE } from "@/components/MaintenanceBanner";
 import { Capacitor } from "@capacitor/core";
 import { StatusBar, Style } from "@capacitor/status-bar";
@@ -55,12 +56,12 @@ const queryClient = new QueryClient();
 let splashShownThisSession = false;
 
 const App = () => {
-  // Splash is native-only; never shown on web
+  // Native: image splash every cold launch. Web: animated intro once per browser session.
   const [showSplash, setShowSplash] = useState(() =>
-    Capacitor.isNativePlatform() ? !splashShownThisSession : false
+    Capacitor.isNativePlatform() ? !splashShownThisSession : !sessionStorage.getItem("splashSeen")
   );
   const [hasSeenSplash, setHasSeenSplash] = useState(() =>
-    Capacitor.isNativePlatform() ? splashShownThisSession : true
+    Capacitor.isNativePlatform() ? splashShownThisSession : !!sessionStorage.getItem("splashSeen")
   );
 
   useEffect(() => {
@@ -153,7 +154,11 @@ const App = () => {
                 <>
                   {/* Splash Screen - only on first load per session */}
                   {showSplash && !hasSeenSplash && (
-                    <SplashScreen onComplete={handleSplashComplete} />
+                    Capacitor.isNativePlatform() ? (
+                      <SplashScreen onComplete={handleSplashComplete} />
+                    ) : (
+                      <WebSplashScreen onComplete={handleSplashComplete} />
+                    )
                   )}
 
                   <AppUpdateGuard>
