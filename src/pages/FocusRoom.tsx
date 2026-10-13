@@ -77,7 +77,7 @@ async function buildSound(id: string, volume: number): Promise<SoundNode> {
   const reverb = new Tone.Reverb({ decay: 3.5, wet: 0.45 }).connect(masterGain);
   await reverb.generate();
 
-  const nodes: Tone.ToneAudioNode[] = [reverb, masterGain];
+  const nodes: (Tone.ToneAudioNode | Tone.Loop)[] = [reverb, masterGain];
 
   switch (id) {
     // ── RAIN ─────────────────────────────────────────────────────────────────
