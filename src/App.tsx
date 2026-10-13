@@ -55,20 +55,13 @@ const queryClient = new QueryClient();
 let splashShownThisSession = false;
 
 const App = () => {
-  // On native: always show on first render (module flag guards against in-app re-mounts)
-  // On web: respect sessionStorage so navigating tabs doesn't re-trigger the splash
-  const [showSplash, setShowSplash] = useState(() => {
-    if (Capacitor.isNativePlatform()) {
-      return !splashShownThisSession;
-    }
-    return !sessionStorage.getItem("splashSeen");
-  });
-  const [hasSeenSplash, setHasSeenSplash] = useState(() => {
-    if (Capacitor.isNativePlatform()) {
-      return splashShownThisSession;
-    }
-    return !!sessionStorage.getItem("splashSeen");
-  });
+  // Splash is native-only; never shown on web
+  const [showSplash, setShowSplash] = useState(() =>
+    Capacitor.isNativePlatform() ? !splashShownThisSession : false
+  );
+  const [hasSeenSplash, setHasSeenSplash] = useState(() =>
+    Capacitor.isNativePlatform() ? splashShownThisSession : true
+  );
 
   useEffect(() => {
 
