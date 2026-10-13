@@ -276,8 +276,8 @@ async function buildSound(id: string, volume: number): Promise<SoundNode> {
     stop: () => {
       nodes.forEach((n) => {
         try {
-          if ("stop" in n && typeof (n as Tone.ToneAudioNode & { stop?: () => void }).stop === "function") {
-            (n as Tone.ToneAudioNode & { stop: () => void }).stop();
+          if ("stop" in n && typeof (n as unknown as { stop?: () => void }).stop === "function") {
+            (n as unknown as { stop: () => void }).stop();
           }
           if ("dispose" in n) n.dispose();
         } catch (_) {
