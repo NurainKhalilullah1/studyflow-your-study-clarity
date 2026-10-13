@@ -11,7 +11,7 @@ export const WebSplashScreen = ({ onComplete }: WebSplashScreenProps) => {
       className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background"
       initial={{ opacity: 1 }}
       animate={{ opacity: 0 }}
-      transition={{ duration: 0.5, delay: 2.2 }}
+      transition={{ duration: 0.5, delay: 4.5 }}
       onAnimationComplete={onComplete}
     >
       {/* Gradient background */}
